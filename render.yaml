@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: lol-stats-api
+    env: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: SUPABASE_URL
+        value: https://hdxhjybmstpjhnahoots.supabase.co
+      - key: SUPABASE_KEY
+        sync: false   # à renseigner manuellement dans le dashboard Render
+      - key: RIOT_API_KEY
+        sync: false   # à renouveler tous les jours sur developer.riotgames.com

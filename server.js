@@ -7,12 +7,15 @@ const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin: [/https:\/\/.*\.github\.io$/, /http:\/\/localhost(:\d+)?$/]
+}));
 
-const SUPABASE_URL = 'https://hdxhjybmstpjhnahoots.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkeGhqeWJtc3RwamhuYWhvb3RzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1MDg4NTYsImV4cCI6MjA4NTA4NDg1Nn0.XKMTeQHWltyk27K2hH7FiE5DKtKZbNI8Lo5sHT8S7Ls'; // ta clé service_role
-// ⚠️ RENOUVELLE ICI : https://developer.riotgames.com (valide 24h seulement)
-const RIOT_API_KEY = 'RGAPI-fda30d69-536d-482a-a6e5-d7f48ba3b498';
+// Variables d'environnement (à configurer dans le dashboard Render)
+// ⚠️ RIOT_API_KEY : https://developer.riotgames.com (valide 24h seulement)
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+const RIOT_API_KEY = process.env.RIOT_API_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const REGION_HOST = 'https://europe.api.riotgames.com';
@@ -124,4 +127,5 @@ app.get('/import', async (req, res) => {
 });
 
 app.get('/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
-app.listen(3000, () => console.log('🚀 Serveur prêt → http://localhost:3000'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Serveur prêt → http://localhost:${PORT}`));

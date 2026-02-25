@@ -700,6 +700,8 @@ Chart.register(ChartDataLabels);
 const SUPABASE_URL = 'https://hdxhjybmstpjhnahoots.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkeGhqeWJtc3RwamhuYWhvb3RzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1MDg4NTYsImV4cCI6MjA4NTA4NDg1Nn0.XKMTeQHWltyk27K2hH7FiE5DKtKZbNI8Lo5sHT8S7Ls';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// ⚠️ Mettre ici l'URL de ton service Render après déploiement
+const API_BASE = 'https://lol-stats-api.onrender.com';
 const D_VER = '14.1.1';
 let charts = { radar: null, trend: null, donuts: {} };
 
@@ -752,8 +754,8 @@ async function analyze() {
     const btn = document.getElementById('btn-go');
     btn.disabled = true; btn.textContent = '⏳';
 
-    fetch(`http://localhost:3000/import?riotId=${encodeURIComponent(p1)}`).catch(()=>{});
-    fetch(`http://localhost:3000/import?riotId=${encodeURIComponent(p2)}`).catch(()=>{});
+    fetch(`${API_BASE}/import?riotId=${encodeURIComponent(p1)}`).catch(()=>{});
+    fetch(`${API_BASE}/import?riotId=${encodeURIComponent(p2)}`).catch(()=>{});
 
     showSkeleton();
     try {
