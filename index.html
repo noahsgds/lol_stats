@@ -740,6 +740,28 @@
 
         .db-clickable { cursor: pointer; transition: filter 0.15s; }
         .db-clickable:hover { filter: brightness(1.1); }
+
+        /* ══════════════════════════════════════
+           TOAST
+        ══════════════════════════════════════ */
+        .toast {
+            position: fixed; bottom: 24px; left: 50%;
+            transform: translateX(-50%);
+            background: var(--card);
+            border: 1px solid var(--border-hi);
+            border-top: 2px solid var(--gold);
+            color: var(--text-mid);
+            font-size: 12px; font-weight: 600;
+            padding: 10px 20px; border-radius: 8px;
+            z-index: 9999; white-space: nowrap;
+            animation: toastIn 0.3s ease both;
+            pointer-events: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+        @keyframes toastIn {
+            from { opacity:0; transform: translateX(-50%) translateY(8px); }
+            to   { opacity:1; transform: translateX(-50%) translateY(0); }
+        }
     </style>
 </head>
 <body>
@@ -772,6 +794,11 @@
                     <option value="420">Solo/Duo</option>
                     <option value="440">Flex</option>
                     <option value="450">ARAM</option>
+                    <option value="490">Quickplay</option>
+                    <option value="400">Normal</option>
+                    <option value="700">Clash</option>
+                    <option value="900">URF</option>
+                    <option value="1700">Arena</option>
                 </select>
             </div>
             <button class="btn-go" id="btn-go" onclick="analyze()">Analyser →</button>
@@ -860,10 +887,19 @@ const SUPABASE_URL = 'https://hdxhjybmstpjhnahoots.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkeGhqeWJtc3RwamhuYWhvb3RzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk1MDg4NTYsImV4cCI6MjA4NTA4NDg1Nn0.XKMTeQHWltyk27K2hH7FiE5DKtKZbNI8Lo5sHT8S7Ls';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const API_BASE = 'https://lol-stats-svlz.onrender.com';
-const D_VER = '14.1.1';
+const D_VER = '16.4.1';
 let charts = { radar: null, trend: null, donuts: {} };
 let playersData = {};   // { p1: {rank,global,history,rawTag}, p2: {...} }
 let dashChart   = null; // Chart.js instance du dashboard (destroy propre)
+
+// ─── TOAST ───────────────────────────────────────────────
+function showToast(msg, duration = 3500) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), duration);
+}
 
 // ─── UTILS ───────────────────────────────────────────────
 const fmt    = n => (n||0).toLocaleString('fr-FR');
@@ -884,12 +920,21 @@ function timeAgo(val) {
 function getChampKey(name) {
     if (!name) return 'Lux';
     let c = name.replace(/'/g,'').replace(/\./g,'').replace(/\s+/g,'').replace(/&/g,'');
-    const sp = { Wukong:'MonkeyKing', NunuWillump:'Nunu', RenataGlasc:'Renata' };
+    const sp = {
+        Wukong:'MonkeyKing', NunuWillump:'Nunu', RenataGlasc:'Renata',
+        BelVeth:'Belveth', ChoGath:'Chogath', KaiSa:'Kaisa',
+        KhaZix:'Khazix', LeBlanc:'Leblanc', VelKoz:'Velkoz'
+    };
     return sp[c] || c;
 }
 
 function getQ(qid) {
-    const m = {420:'Solo/Duo',440:'Flex',450:'ARAM',400:'Normal',430:'Normal',700:'Clash',900:'URF',1700:'Arena'};
+    const m = {
+        420:'Solo/Duo', 440:'Flex', 450:'ARAM',
+        400:'Normal', 430:'Normal', 490:'Quickplay',
+        700:'Clash', 900:'URF', 1900:'URF',
+        1700:'Arena', 830:'Co-op IA', 840:'Co-op IA', 850:'Co-op IA', 0:'Custom'
+    };
     return m[qid] || `Q${qid||'?'}`;
 }
 
@@ -916,6 +961,7 @@ async function analyze() {
 
     fetch(`${API_BASE}/import?riotId=${encodeURIComponent(p1)}`).catch(()=>{});
     fetch(`${API_BASE}/import?riotId=${encodeURIComponent(p2)}`).catch(()=>{});
+    showToast('🔄 Mise à jour des données en arrière-plan…');
 
     showSkeleton();
     try {
@@ -975,8 +1021,12 @@ function renderProfile(pid, data, rawTag, isP2) {
                 <div class="rank-chip ${tier==='UNRANKED'?'unranked':''}">${tier === 'UNRANKED' ? 'UNRANKED' : tier.slice(0,1)+' '+(r.solo_rank||'')}</div>
             </div>
             <div>
-                <div class="profile-name ${cls}">${name}</div>
-                <div class="profile-rank-text">${tier === 'UNRANKED' ? 'Non classé' : `${tier} ${r.solo_rank||''}${lp}`}</div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <div class="profile-name ${cls}">${name}</div>
+                    ${r.summoner_level ? `<span style="font-size:10px;font-weight:700;font-family:'JetBrains Mono',monospace;background:var(--border);color:var(--text-mid);padding:2px 7px;border-radius:4px;flex-shrink:0">Niv.${r.summoner_level}</span>` : ''}
+                </div>
+                <div class="profile-rank-text">${tier === 'UNRANKED' ? 'Non classé' : `Solo: ${tier} ${r.solo_rank||''}${lp}`}</div>
+                ${r.flex_tier ? `<div class="profile-rank-text" style="font-size:10px;opacity:0.75">Flex: ${r.flex_tier} ${r.flex_rank||''} · ${r.flex_lp??'?'} LP</div>` : ''}
             </div>
         </div>
 

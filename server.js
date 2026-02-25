@@ -59,7 +59,7 @@ app.get('/import', async (req, res) => {
 
         // 1. PUUID
         const { data: acc } = await getRiot(
-            `${REGION_HOST}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${tagLine}`
+            `${REGION_HOST}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`
         );
         const { puuid } = acc;
 
