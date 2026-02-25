@@ -610,6 +610,136 @@
 
         @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
         .fade-in { animation: fadeUp 0.3s ease both; }
+
+        /* ══════════════════════════════════════
+           PLAYER DASHBOARD
+        ══════════════════════════════════════ */
+        @keyframes dashSlideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to   { transform: translateX(0);    opacity: 1; }
+        }
+
+        .db-overlay {
+            position: fixed; inset: 0;
+            background: rgba(10,8,4,0.82);
+            z-index: 1000;
+            display: none;
+            justify-content: flex-end;
+            backdrop-filter: blur(3px);
+        }
+        .db-overlay.db-open { display: flex; }
+
+        .db-panel {
+            width: min(880px, 100vw);
+            height: 100vh;
+            background: var(--bg2);
+            border-left: 1px solid var(--border-hi);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            animation: dashSlideIn 0.28s cubic-bezier(0.4,0,0.2,1) both;
+        }
+        .db-panel::-webkit-scrollbar { width: 3px; }
+        .db-panel::-webkit-scrollbar-thumb { background: var(--border-hi); }
+
+        .db-header {
+            display: flex; align-items: center; gap: 14px;
+            padding: 16px 24px;
+            background: var(--card);
+            border-bottom: 2px solid var(--gold);
+            position: sticky; top: 0; z-index: 10;
+            flex-shrink: 0;
+        }
+        .db-back {
+            background: transparent;
+            border: 1px solid var(--border-hi);
+            color: var(--text-mid);
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 14px; font-weight: 700;
+            padding: 6px 14px; border-radius: 6px;
+            cursor: pointer; letter-spacing: 0.5px;
+            transition: border-color 0.15s, color 0.15s;
+            flex-shrink: 0;
+        }
+        .db-back:hover { border-color: var(--gold); color: var(--gold); }
+
+        .db-avatar {
+            width: 48px; height: 48px; border-radius: 6px;
+            border: 2px solid var(--border-hi); flex-shrink: 0;
+        }
+        .db-name {
+            font-size: 22px; font-weight: 900;
+            text-transform: uppercase; letter-spacing: -0.5px; line-height: 1;
+            margin-bottom: 3px;
+        }
+        .db-rank-sub {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px; color: var(--text-mid);
+        }
+
+        .db-overview {
+            display: flex; flex-wrap: wrap; gap: 10px;
+            padding: 18px 24px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .db-stat-card {
+            flex: 1; min-width: 110px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px; padding: 12px 14px; text-align: center;
+        }
+        .db-stat-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 20px; font-weight: 700;
+            color: var(--text); line-height: 1; margin-bottom: 4px;
+        }
+        .db-stat-val.big { font-size: 28px; font-weight: 900; }
+        .db-stat-lbl {
+            font-size: 9px; color: var(--text-dim);
+            text-transform: uppercase; letter-spacing: 1px; font-weight: 700;
+        }
+
+        .db-section { padding: 20px 24px; border-bottom: 1px solid var(--border); }
+        .db-section-title {
+            font-size: 10px; font-weight: 800;
+            text-transform: uppercase; letter-spacing: 2px;
+            color: var(--text-dim); margin-bottom: 14px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .db-section-title::before {
+            content: ''; display: inline-block;
+            width: 3px; height: 13px;
+            background: var(--gold); border-radius: 2px;
+        }
+
+        .db-champ-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .db-champ-table thead tr { border-bottom: 1px solid var(--border-hi); }
+        .db-champ-table th {
+            padding: 6px 10px; text-align: left;
+            font-size: 9px; font-weight: 800;
+            text-transform: uppercase; letter-spacing: 1px;
+            color: var(--text-dim); white-space: nowrap;
+        }
+        .db-champ-table td {
+            padding: 8px 10px; border-bottom: 1px solid var(--border);
+            font-family: 'JetBrains Mono', monospace; font-size: 12px;
+            color: var(--text); vertical-align: middle;
+        }
+        .db-champ-table tbody tr:hover td { background: rgba(240,165,0,0.03); }
+        .db-champ-icon {
+            width: 30px; height: 30px; border-radius: 4px;
+            border: 1px solid var(--border-hi); display: block;
+        }
+        .db-champ-name {
+            font-family: 'Barlow Condensed', sans-serif !important;
+            font-size: 14px !important; font-weight: 700; color: var(--text);
+        }
+        .db-chart-wrap { height: 180px; position: relative; }
+
+        .db-clickable { cursor: pointer; transition: filter 0.15s; }
+        .db-clickable:hover { filter: brightness(1.1); }
     </style>
 </head>
 <body>
@@ -694,6 +824,35 @@
     </div>
 </div>
 
+<!-- ── PLAYER DASHBOARD OVERLAY ─────────────────── -->
+<div id="db-overlay" class="db-overlay" onclick="handleDbOverlayClick(event)">
+    <div class="db-panel">
+        <div class="db-header">
+            <button class="db-back" onclick="closeDashboard()">← Retour</button>
+            <img id="db-avatar" class="db-avatar" src="" onerror="this.style.opacity='.3'">
+            <div>
+                <div id="db-name" class="db-name"></div>
+                <div id="db-rank-sub" class="db-rank-sub"></div>
+            </div>
+        </div>
+        <div id="db-overview" class="db-overview"></div>
+        <div class="db-section">
+            <div class="db-section-title">Champion Pool</div>
+            <table class="db-champ-table">
+                <thead><tr>
+                    <th></th><th>Champion</th><th>Parties</th>
+                    <th>WR%</th><th>KDA</th><th>Dmg moy.</th><th>CS moy.</th>
+                </tr></thead>
+                <tbody id="db-champ-tbody"></tbody>
+            </table>
+        </div>
+        <div class="db-section">
+            <div id="db-trend-title" class="db-section-title"></div>
+            <div class="db-chart-wrap"><canvas id="db-trend-chart"></canvas></div>
+        </div>
+    </div>
+</div>
+
 <script>
 Chart.register(ChartDataLabels);
 
@@ -703,6 +862,8 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const API_BASE = 'https://lol-stats-svlz.onrender.com';
 const D_VER = '14.1.1';
 let charts = { radar: null, trend: null, donuts: {} };
+let playersData = {};   // { p1: {rank,global,history,rawTag}, p2: {...} }
+let dashChart   = null; // Chart.js instance du dashboard (destroy propre)
 
 // ─── UTILS ───────────────────────────────────────────────
 const fmt    = n => (n||0).toLocaleString('fr-FR');
@@ -759,6 +920,8 @@ async function analyze() {
     showSkeleton();
     try {
         const [d1, d2] = await Promise.all([fetchAll(p1, q), fetchAll(p2, q)]);
+        playersData.p1 = { ...d1, rawTag: p1 };
+        playersData.p2 = { ...d2, rawTag: p2 };
         console.log('J1', d1); console.log('J2', d2);
 
         renderProfile('p1', d1, p1, false);
@@ -804,7 +967,7 @@ function renderProfile(pid, data, rawTag, isP2) {
     const formDots = last10.map(m => `<div class="form-dot ${m.win ? 'W' : 'L'}" title="${m.win ? 'Victoire' : 'Défaite'}"></div>`).join('');
 
     document.getElementById(`${pid}-profile`).innerHTML = `
-    <div class="profile-box fade-in">
+    <div class="profile-box fade-in db-clickable" onclick="showDashboard('${pid}')" title="Voir le dashboard">
         <div class="profile-header">
             <div class="avatar-frame">
                 <img src="https://ddragon.leagueoflegends.com/cdn/${D_VER}/img/profileicon/${r.profile_icon_id||29}.png"
@@ -1165,6 +1328,134 @@ function renderH2H(g1, g2, tag1, tag2) {
             </div>
         </div>`).join('')}
     </div>`;
+}
+
+// ─── DASHBOARD ────────────────────────────────────
+function computeChampStats(history) {
+    const map = {};
+    (history || []).forEach(m => {
+        const key = m.champion_name || 'Unknown';
+        const s = map[key] = map[key] || { games:0, wins:0, k:0, d:0, a:0, dmg:0, cs:0 };
+        s.games++; if (m.win) s.wins++;
+        s.k += (m.kills||0); s.d += (m.deaths||0); s.a += (m.assists||0);
+        s.dmg += (m.total_damage||0); s.cs += (m.cs||0);
+    });
+    return Object.entries(map)
+        .map(([name, s]) => ({
+            name, games: s.games,
+            wr: Math.round(s.wins / s.games * 100),
+            kda: ((s.k + s.a) / Math.max(s.d, 1)).toFixed(2),
+            avgDmg: Math.round(s.dmg / s.games),
+            avgCs:  Math.round(s.cs  / s.games)
+        }))
+        .sort((a, b) => b.games - a.games)
+        .slice(0, 10);
+}
+
+function showDashboard(pid) {
+    const data = playersData[pid];
+    if (!data) return;
+    const { rank: r, global: g, history: h, rawTag } = data;
+    const isP2   = pid === 'p2';
+    const color  = isP2 ? '#e84d00' : '#f0a500';
+    const cssColor = isP2 ? 'var(--p2)' : 'var(--p1)';
+    const name   = (r.riot_id || rawTag || '').split('#')[0];
+    const tier   = r.solo_tier || 'UNRANKED';
+    const rankTxt = tier === 'UNRANKED' ? 'Non classé'
+        : `${tier} ${r.solo_rank || ''} · ${r.solo_lp ?? '?'} LP`;
+
+    // Header
+    document.getElementById('db-avatar').src =
+        `https://ddragon.leagueoflegends.com/cdn/${D_VER}/img/profileicon/${r.profile_icon_id||29}.png`;
+    const nameEl = document.getElementById('db-name');
+    nameEl.textContent = name;
+    nameEl.style.color = cssColor;
+    document.getElementById('db-rank-sub').textContent = rankTxt;
+
+    // Overview stats
+    const wr    = toWR(g.win_rate);
+    const total = parseInt(g.total_games) || 0;
+    const wins  = Math.round((parseFloat(wr)/100) * total);
+    document.getElementById('db-overview').innerHTML = [
+        { lbl: 'Parties',    val: total,                            big: false },
+        { lbl: 'Win Rate',   val: wr+'%',                          big: true,  col: cssColor },
+        { lbl: 'KDA',        val: toFixed(g.kda,2)+':1',           big: true,  col: cssColor },
+        { lbl: 'Dmg moyen',  val: fmtK(Math.round(g.avg_damage||0)) },
+        { lbl: 'CS moyen',   val: Math.round(g.avg_cs||0)          },
+        { lbl: 'Vision moy.',val: toFixed(g.avg_vision,1)          },
+    ].map(s => `
+        <div class="db-stat-card">
+            <div class="db-stat-val${s.big?' big':''}" style="color:${s.col||'var(--text)'}">${s.val}</div>
+            <div class="db-stat-lbl">${s.lbl}</div>
+        </div>`).join('');
+
+    // Champion table
+    const champs = computeChampStats(h);
+    document.getElementById('db-champ-tbody').innerHTML = champs.length
+        ? champs.map(c => {
+            const wrColor = c.wr >= 55 ? 'var(--win)' : c.wr <= 45 ? 'var(--loss)' : 'var(--text)';
+            return `<tr>
+                <td><img class="db-champ-icon"
+                    src="https://ddragon.leagueoflegends.com/cdn/${D_VER}/img/champion/${getChampKey(c.name)}.png"
+                    onerror="this.style.opacity='.2'" title="${c.name}"></td>
+                <td class="db-champ-name">${c.name}</td>
+                <td>${c.games}</td>
+                <td style="color:${wrColor};font-weight:800">${c.wr}%</td>
+                <td style="color:${cssColor}">${c.kda}</td>
+                <td>${fmtK(c.avgDmg)}</td>
+                <td>${c.avgCs}</td>
+            </tr>`;
+        }).join('')
+        : '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-dim)">Aucune donnée</td></tr>';
+
+    // Trend chart
+    const last20 = (h || []).slice(0, 20).reverse();
+    document.getElementById('db-trend-title').textContent =
+        `Forme récente — ${last20.length} derniers matchs`;
+    if (dashChart) { dashChart.destroy(); dashChart = null; }
+    let wins20 = 0;
+    const trendData = last20.map((m, i) => {
+        if (m.win) wins20++;
+        return parseFloat(((wins20 / (i+1)) * 100).toFixed(1));
+    });
+    const ctx = document.getElementById('db-trend-chart').getContext('2d');
+    dashChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: last20.map((_, i) => `G${i+1}`),
+            datasets: [{ label: 'Win Rate', data: trendData,
+                borderColor: color,
+                backgroundColor: isP2 ? 'rgba(232,77,0,0.08)' : 'rgba(240,165,0,0.08)',
+                borderWidth: 2, pointRadius: 3, pointBackgroundColor: color,
+                tension: 0.4, fill: true }]
+        },
+        options: {
+            maintainAspectRatio: false,
+            scales: {
+                x: { ticks: { color: '#4a4232', font:{ size:9 } }, grid: { color:'rgba(42,36,22,0.5)' } },
+                y: { min:0, max:100, ticks: { color:'#4a4232', font:{size:9}, callback: v => v+'%' }, grid: { color:'rgba(42,36,22,0.5)' } }
+            },
+            plugins: { legend:{ display:false }, datalabels:{ display:false } }
+        }
+    });
+
+    // Show
+    document.getElementById('db-overlay').classList.add('db-open');
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleDashEsc, { once: true });
+}
+
+function closeDashboard() {
+    document.getElementById('db-overlay').classList.remove('db-open');
+    document.body.style.overflow = '';
+    document.removeEventListener('keydown', handleDashEsc);
+    if (dashChart) { dashChart.destroy(); dashChart = null; }
+}
+
+function handleDashEsc(e) { if (e.key === 'Escape') closeDashboard(); }
+
+function handleDbOverlayClick(e) {
+    if (e.target === document.getElementById('db-overlay')) closeDashboard();
 }
 </script>
 </body>
