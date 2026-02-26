@@ -456,7 +456,7 @@ function TopItems({ history }) {
 
 // ─── MAIN DASHBOARD ───────────────────────────────────────
 
-export default function PlayerDashboard({ data, pid, onClose }) {
+export default function PlayerDashboard({ data, pid, onClose, inline = false }) {
     const isP2     = pid === 'p2';
     const color    = isP2 ? '#e84d00' : '#f0a500';
     const cssColor = isP2 ? 'var(--p2)' : 'var(--p1)';
@@ -511,11 +511,12 @@ export default function PlayerDashboard({ data, pid, onClose }) {
     };
 
     useEffect(() => {
+        if (inline) return;
         const handler = e => { if (e.key === 'Escape') onClose(); };
         document.addEventListener('keydown', handler);
         document.body.style.overflow = 'hidden';
         return () => { document.removeEventListener('keydown', handler); document.body.style.overflow = ''; };
-    }, [onClose]);
+    }, [onClose, inline]);
 
     return (
         <>
@@ -526,7 +527,7 @@ export default function PlayerDashboard({ data, pid, onClose }) {
                 }
             `}</style>
 
-            <div className="db-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+            <div className={inline ? 'db-inline' : 'db-overlay'} onClick={!inline ? (e => { if (e.target === e.currentTarget) onClose(); }) : undefined}>
                 <div className="db-panel">
 
                     {/* ── HEADER ── */}

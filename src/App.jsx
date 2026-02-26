@@ -15,11 +15,16 @@ export default function App() {
     const [p1Input, setP1Input] = useState('PH Ha0n#0617');
     const [p2Input, setP2Input] = useState('SannSawako#9403');
     const [queue, setQueue] = useState('');
+    const [mode, setMode] = useState('compare');
     const [loading, setLoading] = useState(false);
     const [syncMsg, setSyncMsg] = useState(null);
     const [playersData, setPlayersData] = useState({ p1: null, p2: null });
     const [toast, setToast] = useState(null);
     const [dashPid, setDashPid] = useState(null);
+    const [soloInput, setSoloInput] = useState('');
+    const [soloData, setSoloData] = useState(null);
+    const [soloLoading, setSoloLoading] = useState(false);
+    const [soloSyncMsg, setSoloSyncMsg] = useState(null);
 
     const showToast = useCallback((msg, duration = 3500) => {
         setToast(msg);
@@ -85,6 +90,40 @@ export default function App() {
         }
     }, [p1Input, p2Input, queue, showToast]);
 
+    const analyzeSolo = useCallback(async () => {
+        const tag = soloInput.trim();
+        const q = queue || null;
+        if (!tag.includes('#')) { alert('Format : Pseudo#TAG'); return; }
+        setSoloLoading(true);
+        setSoloData(null);
+        try {
+            setSoloSyncMsg('Connexion au serveur…');
+            const wakeCtrl = new AbortController();
+            const wakeTimer = setTimeout(() => wakeCtrl.abort(), 90000);
+            try { await fetch(`${API_BASE}/ping?_t=${Date.now()}`, { signal: wakeCtrl.signal }); }
+            catch { } finally { clearTimeout(wakeTimer); }
+
+            setSoloSyncMsg('Synchronisation Riot en cours…');
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 30000);
+            let syncResult = { added: 0 };
+            try {
+                const r = await fetch(`${API_BASE}/sync?riotId=${encodeURIComponent(tag)}&_t=${Date.now()}`, { signal: ctrl.signal });
+                if (r.ok) { const d = await r.json(); if (!d.error) syncResult = d; }
+            } catch { } finally { clearTimeout(t); }
+
+            setSoloSyncMsg('Chargement des données…');
+            const d = await fetchAll(tag, q);
+            setSoloData({ ...d, rawTag: tag });
+            showToast(syncResult.added > 0 ? `✅ ${syncResult.added} nouveau(x) match(s) ajouté(s)` : '✅ Données à jour');
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setSoloSyncMsg(null);
+            setSoloLoading(false);
+        }
+    }, [soloInput, queue, showToast]);
+
     const { p1, p2 } = playersData;
 
     return (
@@ -95,10 +134,14 @@ export default function App() {
                 <TopBar
                     p1Input={p1Input} setP1Input={setP1Input}
                     p2Input={p2Input} setP2Input={setP2Input}
+                    soloInput={soloInput} setSoloInput={setSoloInput}
                     queue={queue} setQueue={setQueue}
-                    loading={loading} onAnalyze={analyze}
+                    loading={mode === 'compare' ? loading : soloLoading}
+                    onAnalyze={mode === 'compare' ? analyze : analyzeSolo}
+                    mode={mode} setMode={setMode}
                 />
-                {loading ? (
+                {mode === 'compare' ? (
+                loading ? (
                     <div className="sync-banner">
                         <div className="sync-spinner" />
                         {syncMsg || 'Chargement…'}
@@ -147,7 +190,17 @@ export default function App() {
                         </div>
                     </div>
                 </div>
-                ) : <Empty />}
+                ) : <Empty />
+            ) : (
+                soloLoading ? (
+                    <div className="sync-banner">
+                        <div className="sync-spinner" />
+                        {soloSyncMsg || 'Chargement…'}
+                    </div>
+                ) : soloData ? (
+                    <PlayerDashboard data={soloData} pid="p1" onClose={() => setSoloData(null)} inline />
+                ) : <Empty />
+            )}
             </div>
 
             {dashPid && (

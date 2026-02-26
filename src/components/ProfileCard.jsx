@@ -100,6 +100,10 @@ export default function ProfileCard({ data, isP2, onDashboard }) {
                         <div className="mini-stat-lbl">Vision moy.</div>
                     </div>
                 </div>
+
+                <button className="db-open-btn" onClick={e => { e.stopPropagation(); onDashboard(); }}>
+                    📊 Dashboard complet →
+                </button>
             </div>
 
             <div className="form-strip">
