@@ -126,6 +126,62 @@ app.get('/import', async (req, res) => {
     }
 });
 
+// ─── LIVE GAME ────────────────────────────────────────────
+// GET /live?riotId=Name%23TAG   ou   GET /live?summonerId=xxx
+app.get('/live', async (req, res) => {
+    try {
+        const { riotId, summonerId } = req.query;
+        let sid = summonerId;
+
+        if (!sid) {
+            if (!riotId?.includes('#')) return res.status(400).json({ error: 'Paramètre riotId requis (Pseudo#TAG)' });
+            const [gameName, tagLine] = riotId.split('#').map(s => s.trim());
+            const { data: acc } = await getRiot(
+                `${REGION_HOST}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`
+            );
+            const { data: sum } = await getRiot(`${PLATFORM_HOST}/lol/summoner/v4/summoners/by-puuid/${acc.puuid}`);
+            sid = sum.id;
+        }
+
+        try {
+            const { data: live } = await getRiot(`${PLATFORM_HOST}/lol/spectator/v5/active-games/by-summoner/${sid}`);
+            res.json({ inGame: true, ...live });
+        } catch (e) {
+            if (e.response?.status === 404) {
+                res.json({ inGame: false });
+            } else {
+                throw e;
+            }
+        }
+    } catch (err) {
+        console.error('Live error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── LADDER ───────────────────────────────────────────────
+// GET /ladder?type=challenger|grandmaster|master
+app.get('/ladder', async (req, res) => {
+    try {
+        const type = req.query.type || 'challenger';
+        const ep = {
+            challenger: 'challengerleagues',
+            grandmaster: 'grandmasterleagues',
+            master: 'masterleagues'
+        }[type] || 'challengerleagues';
+        const { data } = await getRiot(`${PLATFORM_HOST}/lol/league/v4/${ep}/by-queue/RANKED_SOLO_5x5`);
+        // Renvoie les top 50 triés par LP
+        const sorted = (data.entries || [])
+            .sort((a, b) => b.leaguePoints - a.leaguePoints)
+            .slice(0, 50)
+            .map((e, i) => ({ rank: i + 1, ...e }));
+        res.json({ tier: data.tier, entries: sorted });
+    } catch (err) {
+        console.error('Ladder error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Serveur prêt → http://localhost:${PORT}`));

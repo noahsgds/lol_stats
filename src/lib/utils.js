@@ -42,19 +42,26 @@ export function computeChampStats(history) {
     const map = {};
     (history || []).forEach(m => {
         const key = m.champion_name || 'Unknown';
-        const s = map[key] = map[key] || { games: 0, wins: 0, k: 0, d: 0, a: 0, dmg: 0, cs: 0 };
+        const s = map[key] = map[key] || { games: 0, wins: 0, k: 0, d: 0, a: 0, dmg: 0, cs: 0, dur: 0 };
         s.games++; if (m.win) s.wins++;
         s.k += (m.kills || 0); s.d += (m.deaths || 0); s.a += (m.assists || 0);
-        s.dmg += (m.total_damage || 0); s.cs += (m.cs || 0);
+        s.dmg += (m.total_damage || 0); s.cs += (m.cs || 0); s.dur += (m.game_duration || 0);
     });
     return Object.entries(map)
-        .map(([name, s]) => ({
-            name, games: s.games,
-            wr: Math.round(s.wins / s.games * 100),
-            kda: ((s.k + s.a) / Math.max(s.d, 1)).toFixed(2),
-            avgDmg: Math.round(s.dmg / s.games),
-            avgCs: Math.round(s.cs / s.games)
-        }))
+        .map(([name, s]) => {
+            const avgDurMin = (s.dur / s.games / 60) || 1;
+            return {
+                name, games: s.games,
+                wr: Math.round(s.wins / s.games * 100),
+                kda: ((s.k + s.a) / Math.max(s.d, 1)).toFixed(2),
+                avgDmg: Math.round(s.dmg / s.games),
+                avgCs: Math.round(s.cs / s.games),
+                avgCsMin: (s.cs / s.games / avgDurMin).toFixed(1),
+                avgK: (s.k / s.games).toFixed(1),
+                avgD: (s.d / s.games).toFixed(1),
+                avgA: (s.a / s.games).toFixed(1),
+            };
+        })
         .sort((a, b) => b.games - a.games)
         .slice(0, 10);
 }
