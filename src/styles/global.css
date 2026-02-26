@@ -1599,14 +1599,26 @@ select option { background: #1a1610; }
     padding-left: 7px;
 }
 
+.live-champ-wrap { flex-shrink: 0; }
+
 .live-champ-icon {
-    width: 26px; height: 26px;
-    border-radius: 4px;
+    width: 30px; height: 30px;
+    border-radius: 5px;
     border: 1px solid var(--border-hi);
-    flex-shrink: 0;
+    display: block;
 }
 .live-champ-icon-empty {
     background: var(--border);
+}
+
+.live-spells {
+    display: flex; flex-direction: column; gap: 2px;
+    flex-shrink: 0;
+}
+.live-spell-icon {
+    width: 14px; height: 14px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
 }
 
 .live-player-name {
@@ -1614,17 +1626,48 @@ select option { background: #1a1610; }
     color: var(--text);
     flex: 1;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    min-width: 0;
+}
+
+.live-player-stats {
+    display: flex; flex-direction: column; align-items: flex-end;
+    flex-shrink: 0; gap: 1px;
 }
 
 .live-player-rank {
-    font-size: 10px; font-weight: 600;
-    color: var(--text-mid);
-    flex-shrink: 0;
+    font-size: 10px; font-weight: 700;
+    white-space: nowrap;
 }
 
 .live-player-lp {
     font-size: 9px;
+    font-weight: 500;
     color: var(--text-dim);
     font-family: 'JetBrains Mono', monospace;
-    flex-shrink: 0;
+}
+
+.live-wr {
+    font-size: 9px; font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+}
+.live-wr-win  { color: var(--win); }
+.live-wr-loss { color: var(--loss); }
+.live-wr-games { font-weight: 400; color: var(--text-dim); }
+
+.live-bans {
+    display: flex; align-items: center; gap: 4px;
+    margin-top: 8px; padding-top: 6px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+.live-bans-label {
+    font-size: 8px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-dim);
+}
+.live-ban-icon {
+    width: 18px; height: 18px;
+    border-radius: 3px;
+    opacity: 0.45;
+    filter: grayscale(0.7);
 }
