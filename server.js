@@ -126,8 +126,7 @@ app.get('/import', async (req, res) => {
     }
 });
 
-// ─── SYNC (synchrone, 20 matchs max) ──────────────────────
-// Attend la fin avant de répondre → le client peut attendre fetchAll
+// ─── SYNC (synchrone, 20 matchs max, optimisé) ────────────
 app.get('/sync', async (req, res) => {
     try {
         const riotIdRaw = req.query.riotId;
@@ -144,48 +143,59 @@ app.get('/sync', async (req, res) => {
         );
         const { puuid } = acc;
 
-        // 2. Rangs
+        // 2. Summoner + Match IDs en parallèle
+        const [sumRes, matchIdsRes] = await Promise.all([
+            getRiot(`${PLATFORM_HOST}/lol/summoner/v4/summoners/by-puuid/${puuid}`),
+            getRiot(`${REGION_HOST}/lol/match/v5/matches/by-puuid/${puuid}/ids?start=0&count=20`),
+        ]);
+        const sum = sumRes.data;
+        const matchIds = matchIdsRes.data;
+
+        // 3. Leagues + batch check existants en parallèle (1 seule requête DB au lieu de 20)
+        const [leaguesRes, existingRes] = await Promise.all([
+            getRiot(`${PLATFORM_HOST}/lol/league/v4/entries/by-summoner/${sum.id}`),
+            supabase.from('bronze_matches').select('match_id').in('match_id', matchIds),
+        ]);
+
+        // Mise à jour rangs (fire-and-forget, pas besoin d'attendre)
         try {
-            const { data: sum } = await getRiot(`${PLATFORM_HOST}/lol/summoner/v4/summoners/by-puuid/${puuid}`);
-            const { data: leagues } = await getRiot(`${PLATFORM_HOST}/lol/league/v4/entries/by-summoner/${sum.id}`);
             let rankData = {
                 puuid, riot_id: fullRiotId, summoner_id: sum.id,
                 profile_icon_id: sum.profileIconId, summoner_level: sum.summonerLevel,
                 updated_at: new Date().toISOString()
             };
-            leagues.forEach(e => {
+            leaguesRes.data.forEach(e => {
                 if (e.queueType === 'RANKED_SOLO_5x5')
                     rankData = { ...rankData, solo_tier: e.tier, solo_rank: e.rank, solo_lp: e.leaguePoints, solo_wins: e.wins, solo_losses: e.losses };
                 if (e.queueType === 'RANKED_FLEX_SR')
                     rankData = { ...rankData, flex_tier: e.tier, flex_rank: e.rank, flex_lp: e.leaguePoints };
             });
-            await supabase.from('player_ranks').upsert(rankData, { onConflict: 'puuid' });
-            console.log('   ✅ Rangs à jour');
+            supabase.from('player_ranks').upsert(rankData, { onConflict: 'puuid' }).then(() => {});
         } catch (e) { console.warn('   ⚠️ Rangs ignorés:', e.message); }
 
-        // 3. Derniers 20 matchs seulement
-        const { data: matchIds } = await getRiot(
-            `${REGION_HOST}/lol/match/v5/matches/by-puuid/${puuid}/ids?start=0&count=20`
-        );
+        // 4. Identifier les matchs manquants
+        const existingSet = new Set((existingRes.data || []).map(r => r.match_id));
+        const newMatchIds = matchIds.filter(id => !existingSet.has(id));
+        console.log(`   📋 ${newMatchIds.length} nouveau(x) sur ${matchIds.length}`);
 
-        let added = 0, skipped = 0;
-        for (const matchId of matchIds) {
-            const { data: exist } = await supabase
-                .from('bronze_matches').select('match_id').eq('match_id', matchId).maybeSingle();
-            if (exist) { skipped++; continue; }
+        // 5. Fetch seulement les nouveaux matchs
+        let added = 0;
+        for (let i = 0; i < newMatchIds.length; i++) {
+            const matchId = newMatchIds[i];
             try {
                 const { data: detail } = await getRiot(`${REGION_HOST}/lol/match/v5/matches/${matchId}`);
                 const { error: insErr } = await supabase.from('bronze_matches')
                     .insert({ match_id: matchId, match_data: detail });
                 if (!insErr || insErr?.code === '23505') added++;
-                await sleep(1200);
+                // Pause seulement s'il y a d'autres matchs à fetch
+                if (i < newMatchIds.length - 1) await sleep(1000);
             } catch (e) {
                 console.error(`   ❌ ${matchId}:`, e.message);
             }
         }
 
-        console.log(`   ✅ Sync terminé : +${added} nouveaux | ${skipped} déjà en base`);
-        res.json({ ok: true, added, skipped });
+        console.log(`   ✅ Sync terminé : +${added} nouveaux | ${existingSet.size} déjà en base`);
+        res.json({ ok: true, added, skipped: existingSet.size });
 
     } catch (err) {
         console.error('Sync error:', err.message);
