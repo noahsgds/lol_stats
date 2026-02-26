@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Line, Bar } from 'react-chartjs-2';
-import { D_VER, toFixed, toWR, fmtK, getChampKey, computeChampStats, getQ, API_BASE } from '../lib/utils.js';
+import { Line } from 'react-chartjs-2';
+import { D_VER, toFixed, toWR, fmtK, getChampKey, computeChampStats, getQ, API_BASE, timeAgo } from '../lib/utils.js';
 import { getChampIdMap, champIconUrl, getQueueLabel } from '../lib/ddragon.js';
 
 // ─── CONSTANTS ────────────────────────────────────────────
@@ -8,7 +8,7 @@ import { getChampIdMap, champIconUrl, getQueueLabel } from '../lib/ddragon.js';
 const TREND_METRICS = [
     { key: 'kda',       label: 'KDA',       fmt: v => v.toFixed(2),         color: '#f0a500' },
     { key: 'csMin',     label: 'CS/min',    fmt: v => v.toFixed(1),         color: '#4ade80' },
-    { key: 'dmgMin',    label: 'Dmg/min',   fmt: v => fmtK(Math.round(v)),  color: '#e84d00' },
+    { key: 'dmgMin',    label: 'Dmg/min',   fmt: v => fmtK(Math.round(v)),  color: '#f97316' },
     { key: 'goldMin',   label: 'Gold/min',  fmt: v => Math.round(v),        color: '#fbbf24' },
     { key: 'vision',    label: 'Vision',    fmt: v => Math.round(v),        color: '#a78bfa' },
     { key: 'visionMin', label: 'Vision/min',fmt: v => v.toFixed(2),         color: '#818cf8' },
@@ -86,6 +86,27 @@ function buildQueueBreakdown(history) {
             csMin: (g.cs / g.games / Math.max(g.dur / g.games / 60, 1)).toFixed(1),
         }))
         .sort((a, b) => b.games - a.games);
+}
+
+// S/A/B/C/D grade per match based on KDA, CS/min, Dmg/min, Vision
+function perfGrade(m) {
+    const durMin = Math.max((m.game_duration || 1) / 60, 1);
+    const kda    = parseFloat(m.kda || 0);
+    const csMin  = (m.cs || 0) / durMin;
+    const dmgMin = (m.total_damage || 0) / durMin;
+    const vision = m.vision_score || 0;
+    let score = 0;
+    score += Math.min(kda / 5, 1) * 35;
+    score += Math.min(csMin / 8, 1) * 20;
+    score += Math.min(dmgMin / 2000, 1) * 30;
+    score += Math.min(vision / 50, 1) * 15;
+    if (m.win) score = Math.min(score * 1.1, 100);
+    score = Math.round(score);
+    if (score >= 78) return { label: 'S', color: '#f0a500' };
+    if (score >= 62) return { label: 'A', color: '#4ade80' };
+    if (score >= 46) return { label: 'B', color: '#94a3b8' };
+    if (score >= 30) return { label: 'C', color: '#9a8d72' };
+    return { label: 'D', color: '#f87171' };
 }
 
 // ─── LIVE GAME ────────────────────────────────────────────
@@ -222,6 +243,158 @@ function StatGrid({ stats, cols = 3 }) {
     );
 }
 
+// ─── WIN / LOSS SPLIT ─────────────────────────────────────
+
+function WinLossSplit({ history, cssColor }) {
+    if (!history?.length) return null;
+    const wGames = history.filter(m => m.win);
+    const lGames = history.filter(m => !m.win);
+    if (!wGames.length || !lGames.length) return null;
+
+    const dm = m => Math.max((m.game_duration || 1) / 60, 1);
+    const avg = (arr, fn) => arr.reduce((a, m) => a + fn(m), 0) / arr.length;
+
+    const metrics = [
+        { lbl: 'KDA',          fmt: v => v.toFixed(2), wVal: avg(wGames, m => parseFloat(m.kda || 0)),                      lVal: avg(lGames, m => parseFloat(m.kda || 0)),                      higher: true  },
+        { lbl: 'CS / min',     fmt: v => v.toFixed(1), wVal: avg(wGames, m => (m.cs || 0) / dm(m)),                         lVal: avg(lGames, m => (m.cs || 0) / dm(m)),                         higher: true  },
+        { lbl: 'Dmg / min',    fmt: v => fmtK(Math.round(v)), wVal: avg(wGames, m => (m.total_damage || 0) / dm(m)),        lVal: avg(lGames, m => (m.total_damage || 0) / dm(m)),               higher: true  },
+        { lbl: 'Dmg reçu/min', fmt: v => fmtK(Math.round(v)), wVal: avg(wGames, m => (m.total_damage_taken || 0) / dm(m)), lVal: avg(lGames, m => (m.total_damage_taken || 0) / dm(m)),         higher: false },
+        { lbl: 'Vision',       fmt: v => v.toFixed(1), wVal: avg(wGames, m => m.vision_score || 0),                         lVal: avg(lGames, m => m.vision_score || 0),                         higher: true  },
+        { lbl: 'Or / min',     fmt: v => Math.round(v), wVal: avg(wGames, m => (m.gold_earned || 0) / dm(m)),               lVal: avg(lGames, m => (m.gold_earned || 0) / dm(m)),                higher: true  },
+    ];
+
+    return (
+        <Section title={`Victoires (${wGames.length}) vs Défaites (${lGames.length})`}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                {metrics.map(({ lbl, fmt, wVal, lVal, higher }) => {
+                    const delta  = wVal - lVal;
+                    const pct    = lVal > 0.01 ? delta / lVal * 100 : 0;
+                    const good   = higher ? delta > 0 : delta < 0;
+                    const neut   = Math.abs(pct) < 5;
+                    const tagCol = neut ? 'var(--text-dim)' : good ? 'var(--win)' : 'var(--loss)';
+                    const tag    = neut ? '≈' : `${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%`;
+                    const barW   = Math.min(wVal / Math.max(wVal, lVal, 0.001) * 100, 100);
+                    return (
+                        <div key={lbl} className="db-stat-card">
+                            <div className="db-stat-lbl" style={{ marginBottom: 8 }}>{lbl}</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
+                                <span style={{ color: 'var(--win)', fontWeight: 800, fontSize: '15px', fontFamily: "'JetBrains Mono',monospace" }}>{fmt(wVal)}</span>
+                                <span style={{ color: tagCol, fontSize: '10px', fontWeight: 700, padding: '1px 5px', background: neut ? 'transparent' : good ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)', borderRadius: 3 }}>{tag}</span>
+                                <span style={{ color: 'var(--loss)', fontWeight: 800, fontSize: '15px', fontFamily: "'JetBrains Mono',monospace" }}>{fmt(lVal)}</span>
+                            </div>
+                            <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                                <div style={{ height: '100%', width: `${barW}%`, background: good ? 'var(--win)' : 'var(--loss)', borderRadius: 2, transition: 'width 0.5s ease' }} />
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </Section>
+    );
+}
+
+// ─── FULL MATCH LOG ───────────────────────────────────────
+
+function MatchLog({ history }) {
+    if (!history?.length) return null;
+    const [expanded, setExpanded] = useState(false);
+    const shown = expanded ? history : history.slice(0, 15);
+
+    return (
+        <Section title={`Historique complet — ${history.length} parties`}>
+            <div style={{ overflowX: 'auto' }}>
+                <table className="db-champ-table" style={{ minWidth: 760 }}>
+                    <thead>
+                        <tr>
+                            <th style={{ minWidth: 130 }}>Champion</th>
+                            <th>File</th>
+                            <th>Rés.</th>
+                            <th title="Grade de performance (KDA 35% + CS/min 20% + Dmg/min 30% + Vision 15%)">Perf</th>
+                            <th>K / D / A</th>
+                            <th>CS/min</th>
+                            <th>Dmg/min</th>
+                            <th>Pris/min</th>
+                            <th>Vision</th>
+                            <th>Or/min</th>
+                            <th>Durée</th>
+                            <th>Il y a</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {shown.map((m, i) => {
+                            const dur    = m.game_duration || 0;
+                            const durMin = Math.max(dur / 60, 1);
+                            const durStr = `${Math.floor(dur / 60)}:${String(dur % 60).padStart(2, '0')}`;
+                            const grade  = perfGrade(m);
+                            const cspm   = ((m.cs || 0) / durMin).toFixed(1);
+                            const dmgpm  = fmtK(Math.round((m.total_damage || 0) / durMin));
+                            const takpm  = fmtK(Math.round((m.total_damage_taken || 0) / durMin));
+                            const goldpm = Math.round((m.gold_earned || 0) / durMin);
+                            return (
+                                <tr key={i} style={{
+                                    background: m.win ? 'rgba(74,222,128,0.03)' : 'rgba(248,113,113,0.03)',
+                                    borderLeft: `2px solid ${m.win ? 'rgba(74,222,128,0.22)' : 'rgba(248,113,113,0.22)'}`,
+                                }}>
+                                    <td>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <img
+                                                src={`https://ddragon.leagueoflegends.com/cdn/${D_VER}/img/champion/${getChampKey(m.champion_name)}.png`}
+                                                alt="" style={{ width: 26, height: 26, borderRadius: 4, border: '1px solid var(--border-hi)', flexShrink: 0 }}
+                                                onError={e => { e.target.style.opacity = '.2'; }}
+                                            />
+                                            <span className="db-champ-name" style={{ fontSize: '12px' }}>{m.champion_name}</span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span style={{ fontSize: '9px', background: 'var(--border)', padding: '2px 5px', borderRadius: 3, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{getQ(m.queue_id)}</span>
+                                    </td>
+                                    <td>
+                                        <span style={{
+                                            fontSize: '10px', fontWeight: 800, padding: '2px 7px', borderRadius: 3,
+                                            background: m.win ? 'rgba(74,222,128,0.12)' : 'rgba(248,113,113,0.12)',
+                                            color: m.win ? 'var(--win)' : 'var(--loss)',
+                                        }}>
+                                            {m.win ? 'V' : 'D'}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span style={{ fontSize: '13px', fontWeight: 900, fontFamily: "'JetBrains Mono',monospace", color: grade.color }}>{grade.label}</span>
+                                    </td>
+                                    <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: '11px', whiteSpace: 'nowrap' }}>
+                                        <span style={{ color: 'var(--win)' }}>{m.kills}</span>
+                                        <span style={{ color: 'var(--text-dim)' }}>/</span>
+                                        <span style={{ color: 'var(--loss)' }}>{m.deaths}</span>
+                                        <span style={{ color: 'var(--text-dim)' }}>/</span>
+                                        <span style={{ color: 'var(--text-mid)' }}>{m.assists}</span>
+                                    </td>
+                                    <td style={{ color: 'var(--gold)', fontFamily: "'JetBrains Mono',monospace", fontSize: '11px' }}>{cspm}</td>
+                                    <td style={{ color: '#f97316', fontFamily: "'JetBrains Mono',monospace", fontSize: '11px' }}>{dmgpm}</td>
+                                    <td style={{ color: 'var(--text-mid)', fontFamily: "'JetBrains Mono',monospace", fontSize: '11px' }}>{takpm}</td>
+                                    <td style={{ color: '#a78bfa', fontFamily: "'JetBrains Mono',monospace", fontSize: '11px' }}>{m.vision_score || 0}</td>
+                                    <td style={{ color: '#fbbf24', fontFamily: "'JetBrains Mono',monospace", fontSize: '11px' }}>{goldpm}</td>
+                                    <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: '10px', color: 'var(--text-dim)' }}>{durStr}</td>
+                                    <td style={{ fontSize: '10px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{timeAgo(m.game_end_timestamp)}</td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+            {history.length > 15 && (
+                <button onClick={() => setExpanded(e => !e)} style={{
+                    marginTop: 10, width: '100%', padding: '8px',
+                    background: 'transparent', border: '1px solid var(--border-hi)',
+                    color: 'var(--text-mid)', cursor: 'pointer',
+                    fontFamily: "'Barlow Condensed',sans-serif", fontSize: '12px', fontWeight: 700,
+                    borderRadius: 5, letterSpacing: '0.5px',
+                }}>
+                    {expanded ? '▲ Réduire' : `▼ Voir tout — ${history.length} parties`}
+                </button>
+            )}
+        </Section>
+    );
+}
+
 // ─── PERFORMANCE TRENDS ───────────────────────────────────
 
 function PerformanceTrends({ gameMetrics }) {
@@ -302,7 +475,6 @@ function ConsistencyForm({ cons, cssColor }) {
     return (
         <Section title="Consistance & Forme">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-                {/* Consistency score */}
                 <div className="db-stat-card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                         <div className="db-stat-lbl">Consistance KDA</div>
@@ -313,8 +485,6 @@ function ConsistencyForm({ cons, cssColor }) {
                     </div>
                     <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>σ = {stdDev.toFixed(2)} · μ = {mean.toFixed(2)}</div>
                 </div>
-
-                {/* Tilt indicator */}
                 <div className="db-stat-card">
                     <div className="db-stat-lbl" style={{ marginBottom: 6 }}>Forme (5 vs 10 derniers)</div>
                     <div className="db-stat-val" style={{ color: tiltColor, fontSize: '16px', marginBottom: 4 }}>{tiltLabel}</div>
@@ -328,21 +498,18 @@ function ConsistencyForm({ cons, cssColor }) {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-                {/* Streak */}
                 <div className="db-stat-card">
                     <div className="db-stat-lbl">Série actuelle</div>
                     <div className="db-stat-val big" style={{ color: streakWin ? 'var(--win)' : 'var(--loss)' }}>
                         {streak}{streakWin ? 'W' : 'L'}
                     </div>
                 </div>
-                {/* Last 20 WR */}
                 <div className="db-stat-card">
                     <div className="db-stat-lbl">WR — 20 matchs</div>
                     <div className="db-stat-val big" style={{ color: last20WR >= 55 ? 'var(--win)' : last20WR <= 45 ? 'var(--loss)' : cssColor }}>
                         {last20WR}%
                     </div>
                 </div>
-                {/* Best metric */}
                 <div className="db-stat-card">
                     <div className="db-stat-lbl">KDA moy. L5</div>
                     <div className="db-stat-val big" style={{ color: cssColor }}>{avgKdaLast5}</div>
@@ -356,7 +523,6 @@ function ConsistencyForm({ cons, cssColor }) {
 
 function GameDurationAnalysis({ history, cssColor }) {
     if (!history?.length) return null;
-
     const buckets = DUR_BUCKETS.map(b => {
         const games = history.filter(m => m.game_duration >= b.lo && m.game_duration < b.hi);
         const wins  = games.filter(m => m.win).length;
@@ -476,19 +642,34 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false }) 
     const cons        = buildConsistency(h);
     const champs      = computeChampStats(h);
 
+    // Extended champion data (add dmg taken)
+    const champDmgTaken = {};
+    (h || []).forEach(m => {
+        const key = m.champion_name || 'Unknown';
+        champDmgTaken[key] = champDmgTaken[key] || { dt: 0, n: 0 };
+        champDmgTaken[key].dt += (m.total_damage_taken || 0);
+        champDmgTaken[key].n++;
+    });
+    const champsExt = champs.map(c => ({
+        ...c,
+        avgDmgTaken: Math.round((champDmgTaken[c.name]?.dt || 0) / (champDmgTaken[c.name]?.n || 1)),
+    }));
+
     // Advanced metrics from history
     const adv = (() => {
         if (!h?.length) return null;
-        const durMin   = m => Math.max((m.game_duration || 1) / 60, 1);
-        const avgCsMin = h.reduce((acc, m) => acc + (m.cs || 0) / durMin(m), 0) / h.length;
-        const avgDmgMin= h.reduce((acc, m) => acc + (m.total_damage || 0) / durMin(m), 0) / h.length;
-        const avgGldMin= h.reduce((acc, m) => acc + (m.gold_earned || 0) / durMin(m), 0) / h.length;
-        const avgVisMin= h.reduce((acc, m) => acc + (m.vision_score || 0) / durMin(m), 0) / h.length;
-        const wGames   = h.filter(m => m.win);
-        const lGames   = h.filter(m => !m.win);
-        const avgVisW  = wGames.length ? wGames.reduce((a, m) => a + (m.vision_score || 0), 0) / wGames.length : 0;
-        const avgVisL  = lGames.length ? lGames.reduce((a, m) => a + (m.vision_score || 0), 0) / lGames.length : 0;
-        return { avgCsMin, avgDmgMin, avgGldMin, avgVisMin, avgVisW, avgVisL };
+        const dm = m => Math.max((m.game_duration || 1) / 60, 1);
+        const avgCsMin      = h.reduce((acc, m) => acc + (m.cs || 0) / dm(m), 0) / h.length;
+        const avgDmgMin     = h.reduce((acc, m) => acc + (m.total_damage || 0) / dm(m), 0) / h.length;
+        const avgDmgTknMin  = h.reduce((acc, m) => acc + (m.total_damage_taken || 0) / dm(m), 0) / h.length;
+        const avgGldMin     = h.reduce((acc, m) => acc + (m.gold_earned || 0) / dm(m), 0) / h.length;
+        const avgVisMin     = h.reduce((acc, m) => acc + (m.vision_score || 0) / dm(m), 0) / h.length;
+        const wGames        = h.filter(m => m.win);
+        const lGames        = h.filter(m => !m.win);
+        const avgVisW       = wGames.length ? wGames.reduce((a, m) => a + (m.vision_score || 0), 0) / wGames.length : 0;
+        const avgVisL       = lGames.length ? lGames.reduce((a, m) => a + (m.vision_score || 0), 0) / lGames.length : 0;
+        const dmgRatio      = avgDmgMin / Math.max(avgDmgTknMin, 1);
+        return { avgCsMin, avgDmgMin, avgDmgTknMin, avgGldMin, avgVisMin, avgVisW, avgVisL, dmgRatio };
     })();
 
     // Trend line (last 20, rolling WR)
@@ -538,7 +719,10 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false }) 
                             onError={e => { e.target.style.opacity = '.3'; }} alt="" />
                         <div style={{ flex: 1 }}>
                             <div className="db-name" style={{ color: cssColor }}>{name}</div>
-                            <div className="db-rank-sub">{rankTxt}</div>
+                            <div className="db-rank-sub">
+                                {rankTxt}
+                                {r.flex_tier ? <span style={{ marginLeft: 12, opacity: 0.65 }}>Flex: {r.flex_tier} {r.flex_rank || ''} · {r.flex_lp ?? '?'} LP</span> : null}
+                            </div>
                         </div>
                         {cons && (
                             <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -553,14 +737,16 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false }) 
                     {/* ── OVERVIEW ── */}
                     <div className="db-overview">
                         {[
-                            { lbl: 'Parties',   val: total },
-                            { lbl: 'Win Rate',  val: wr + '%', big: true, col: cssColor },
-                            { lbl: 'KDA',       val: toFixed(g.kda, 2) + ':1', big: true, col: cssColor },
-                            { lbl: 'Victoires', val: wins, col: 'var(--win)' },
-                            { lbl: 'Défaites',  val: total - wins, col: 'var(--loss)' },
-                            { lbl: 'Dmg moy.',  val: fmtK(Math.round(g.avg_damage || 0)) },
-                            { lbl: 'CS moy.',   val: Math.round(g.avg_cs || 0) },
-                            { lbl: 'Vision moy.',val: toFixed(g.avg_vision, 1) },
+                            { lbl: 'Parties',     val: total },
+                            { lbl: 'Win Rate',    val: wr + '%',                              big: true, col: cssColor },
+                            { lbl: 'KDA',         val: toFixed(g.kda, 2) + ':1',              big: true, col: cssColor },
+                            { lbl: 'Victoires',   val: wins,                                  col: 'var(--win)' },
+                            { lbl: 'Défaites',    val: total - wins,                          col: 'var(--loss)' },
+                            { lbl: 'Dmg moy.',    val: fmtK(Math.round(g.avg_damage || 0)),   col: '#f97316' },
+                            { lbl: 'Dmg reçu',    val: fmtK(Math.round(g.avg_damage_taken || 0)), col: 'var(--text-mid)' },
+                            { lbl: 'Or moy.',     val: fmtK(Math.round(g.avg_gold || 0)),     col: 'var(--gold)' },
+                            { lbl: 'CS moy.',     val: Math.round(g.avg_cs || 0) },
+                            { lbl: 'Vision moy.', val: toFixed(g.avg_vision, 1) },
                         ].map(s => (
                             <div key={s.lbl} className="db-stat-card">
                                 <div className={`db-stat-val${s.big ? ' big' : ''}`} style={{ color: s.col || 'var(--text)' }}>{s.val}</div>
@@ -571,17 +757,22 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false }) 
 
                     {/* ── ADVANCED METRICS ── */}
                     {adv && (
-                        <Section title="Métriques avancées">
+                        <Section title="Métriques avancées (per-minute)">
                             <StatGrid cols={3} stats={[
-                                { lbl: 'CS / min',     val: adv.avgCsMin.toFixed(1),             col: cssColor },
-                                { lbl: 'Dmg / min',    val: fmtK(Math.round(adv.avgDmgMin)),     col: cssColor },
-                                { lbl: 'Gold / min',   val: Math.round(adv.avgGldMin),           col: cssColor },
-                                { lbl: 'Vision / min', val: adv.avgVisMin.toFixed(2),            col: 'var(--text)' },
-                                { lbl: 'Vision (V)',   val: adv.avgVisW.toFixed(1),              col: 'var(--win)', sub: 'moy. victoires' },
-                                { lbl: 'Vision (D)',   val: adv.avgVisL.toFixed(1),              col: 'var(--loss)', sub: 'moy. défaites' },
+                                { lbl: 'CS / min',       val: adv.avgCsMin.toFixed(1),             col: 'var(--gold)' },
+                                { lbl: 'Dmg / min',      val: fmtK(Math.round(adv.avgDmgMin)),     col: '#f97316' },
+                                { lbl: 'Dmg reçu / min', val: fmtK(Math.round(adv.avgDmgTknMin)), col: 'var(--text-mid)' },
+                                { lbl: 'Or / min',       val: Math.round(adv.avgGldMin),           col: '#fbbf24' },
+                                { lbl: 'Vision / min',   val: adv.avgVisMin.toFixed(2),            col: '#a78bfa' },
+                                { lbl: 'Ratio dmg/pris', val: adv.dmgRatio.toFixed(2),             col: cssColor, sub: 'dealt ÷ taken' },
+                                { lbl: 'Vision (Vic.)',  val: adv.avgVisW.toFixed(1),              col: 'var(--win)', sub: 'moy. victoires' },
+                                { lbl: 'Vision (Déf.)',  val: adv.avgVisL.toFixed(1),              col: 'var(--loss)', sub: 'moy. défaites' },
                             ]} />
                         </Section>
                     )}
+
+                    {/* ── WIN / LOSS SPLIT ── */}
+                    <WinLossSplit history={h} cssColor={cssColor} />
 
                     {/* ── CONSISTENCY & FORM ── */}
                     <ConsistencyForm cons={cons} cssColor={cssColor} />
@@ -589,17 +780,12 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false }) 
                     {/* ── PERFORMANCE TRENDS ── */}
                     {gameMetrics.length > 0 && <PerformanceTrends gameMetrics={gameMetrics} cssColor={cssColor} />}
 
-                    {/* ── GAME DURATION ANALYSIS ── */}
-                    <GameDurationAnalysis history={h} cssColor={cssColor} />
-
-                    {/* ── QUEUE BREAKDOWN ── */}
-                    <QueueBreakdown history={h} cssColor={cssColor} />
-
-                    {/* ── LIVE GAME ── */}
-                    <LiveGameSection summonerId={r.summoner_id} riotId={rawTag} cssColor={cssColor} />
-
-                    {/* ── TOP ITEMS ── */}
-                    <TopItems history={h} />
+                    {/* ── WR TREND ── */}
+                    <Section title={`Win Rate cumulatif — ${last20.length} derniers matchs`}>
+                        <div className="db-chart-wrap">
+                            <Line data={trendLineData} options={trendOpts} />
+                        </div>
+                    </Section>
 
                     {/* ── CHAMPION POOL ── */}
                     <Section title="Champion Pool">
@@ -608,11 +794,11 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false }) 
                                 <tr>
                                     <th></th><th>Champion</th><th>P</th>
                                     <th>WR%</th><th>KDA</th><th>K / D / A</th>
-                                    <th>CS/min</th><th>Dmg moy.</th>
+                                    <th>CS/min</th><th>Dmg moy.</th><th>Pris moy.</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {champs.length > 0 ? champs.map(c => {
+                                {champsExt.length > 0 ? champsExt.map(c => {
                                     const wrColor = c.wr >= 55 ? 'var(--win)' : c.wr <= 45 ? 'var(--loss)' : 'var(--text)';
                                     return (
                                         <tr key={c.name}>
@@ -623,32 +809,48 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false }) 
                                             </td>
                                             <td className="db-champ-name">{c.name}</td>
                                             <td>{c.games}</td>
-                                            <td style={{ color: wrColor, fontWeight: 800 }}>{c.wr}%</td>
+                                            <td>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 70 }}>
+                                                    <span style={{ color: wrColor, fontWeight: 800, minWidth: 36 }}>{c.wr}%</span>
+                                                    <div style={{ flex: 1, height: 3, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                                                        <div style={{ height: '100%', width: `${c.wr}%`, background: wrColor, borderRadius: 2 }} />
+                                                    </div>
+                                                </div>
+                                            </td>
                                             <td style={{ color: cssColor }}>{c.kda}</td>
-                                            <td style={{ fontSize: '11px' }}>
+                                            <td style={{ fontSize: '11px', fontFamily: "'JetBrains Mono',monospace" }}>
                                                 <span style={{ color: 'var(--win)' }}>{c.avgK}</span>
                                                 <span style={{ color: 'var(--text-dim)' }}>/</span>
                                                 <span style={{ color: 'var(--loss)' }}>{c.avgD}</span>
                                                 <span style={{ color: 'var(--text-dim)' }}>/</span>
                                                 <span style={{ color: 'var(--text-mid)' }}>{c.avgA}</span>
                                             </td>
-                                            <td>{c.avgCsMin}</td>
-                                            <td>{fmtK(c.avgDmg)}</td>
+                                            <td style={{ color: 'var(--gold)' }}>{c.avgCsMin}</td>
+                                            <td style={{ color: '#f97316' }}>{fmtK(c.avgDmg)}</td>
+                                            <td style={{ color: 'var(--text-mid)', fontSize: '11px' }}>{fmtK(c.avgDmgTaken)}</td>
                                         </tr>
                                     );
                                 }) : (
-                                    <tr><td colSpan={8} style={{ textAlign: 'center', padding: 20, color: 'var(--text-dim)' }}>Aucune donnée</td></tr>
+                                    <tr><td colSpan={9} style={{ textAlign: 'center', padding: 20, color: 'var(--text-dim)' }}>Aucune donnée</td></tr>
                                 )}
                             </tbody>
                         </table>
                     </Section>
 
-                    {/* ── WR TREND ── */}
-                    <Section title={`Forme récente — ${last20.length} derniers matchs`}>
-                        <div className="db-chart-wrap">
-                            <Line data={trendLineData} options={trendOpts} />
-                        </div>
-                    </Section>
+                    {/* ── FULL MATCH LOG ── */}
+                    <MatchLog history={h} />
+
+                    {/* ── QUEUE BREAKDOWN ── */}
+                    <QueueBreakdown history={h} cssColor={cssColor} />
+
+                    {/* ── GAME DURATION ANALYSIS ── */}
+                    <GameDurationAnalysis history={h} cssColor={cssColor} />
+
+                    {/* ── TOP ITEMS ── */}
+                    <TopItems history={h} />
+
+                    {/* ── LIVE GAME ── */}
+                    <LiveGameSection summonerId={r.summoner_id} riotId={rawTag} cssColor={cssColor} />
 
                 </div>
             </div>
