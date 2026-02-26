@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Doughnut } from 'react-chartjs-2';
+import '../lib/chartSetup.js';
 import { D_VER, toFixed, toWR, fmtK } from '../lib/utils.js';
 
 const TIER_SHORT = {
@@ -12,8 +13,9 @@ const TIER_COLOR = {
     PLATINUM: '#00e0d0', EMERALD: '#4ade80', DIAMOND: '#4fc3f7',
     MASTER: '#9b59b6', GRANDMASTER: '#e74c3c', CHALLENGER: '#f1c40f',
 };
-const EMBLEM_CDN = 'https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/ranked-emblem/';
-const emblemUrl = tier => tier ? `${EMBLEM_CDN}emblem-${tier.toLowerCase()}.png` : null;
+// Local images (public/ranks/) take priority; CDN fallback if not uploaded yet
+const emblemUrl = tier => tier ? `/ranks/${tier.toLowerCase()}.png` : null;
+const emblemFallback = tier => tier ? `https://opgg-static.akamaized.net/images/medals_new/${tier.toLowerCase()}.png` : null;
 
 function rankLabel(tier, rank) {
     if (!tier) return 'Non classé';
@@ -121,7 +123,11 @@ export default function ProfileCard({ data, isP2, onDashboard }) {
                                     className="pc-rank-emblem"
                                     src={eUrl}
                                     alt={curTier || ''}
-                                    onError={e => { e.target.style.opacity = '.15'; }}
+                                    onError={e => {
+                                        const fb = emblemFallback(curTier);
+                                        if (fb && e.target.src !== fb) { e.target.src = fb; }
+                                        else { e.target.style.opacity = '.15'; }
+                                    }}
                                 />
                             ) : (
                                 <div className="pc-rank-emblem pc-rank-emblem-empty">?</div>
@@ -158,7 +164,12 @@ export default function ProfileCard({ data, isP2, onDashboard }) {
                                     <div key={i} className="pc-history-row">
                                         <div className="pc-history-emblem-wrap">
                                             {sUrl ? (
-                                                <img className="pc-history-emblem" src={sUrl} alt="" onError={e => { e.target.style.opacity = '.2'; }} />
+                                                <img className="pc-history-emblem" src={sUrl} alt=""
+                                                    onError={e => {
+                                                        const fb = emblemFallback(sTier);
+                                                        if (fb && e.target.src !== fb) { e.target.src = fb; }
+                                                        else { e.target.style.opacity = '.2'; }
+                                                    }} />
                                             ) : (
                                                 <div className="pc-history-emblem pc-history-emblem-empty" />
                                             )}

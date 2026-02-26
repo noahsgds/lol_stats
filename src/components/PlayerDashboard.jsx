@@ -546,8 +546,8 @@ const TIER_COLOR_DB = {
     PLATINUM: '#00e0d0', EMERALD: '#4ade80', DIAMOND: '#4fc3f7',
     MASTER: '#9b59b6', GRANDMASTER: '#e74c3c', CHALLENGER: '#f1c40f',
 };
-const DB_EMBLEM_CDN = 'https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/ranked-emblem/';
-function dbEmblemUrl(tier) { return tier ? `${DB_EMBLEM_CDN}emblem-${tier.toLowerCase()}.png` : null; }
+function dbEmblemUrl(tier) { return tier ? `/ranks/${tier.toLowerCase()}.png` : null; }
+function dbEmblemFallback(tier) { return tier ? `https://opgg-static.akamaized.net/images/medals_new/${tier.toLowerCase()}.png` : null; }
 function dbRankLabel(tier, rank) {
     if (!tier) return 'Non classé';
     const t = TIER_SHORT_DB[tier] || tier;
@@ -668,7 +668,12 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false }) 
                                     const dCol  = TIER_COLOR_DB[dTier] || 'var(--text-dim)';
                                     return (
                                         <div className="db-rank-display">
-                                            {dUrl && <img className="db-rank-emblem" src={dUrl} alt={dTier || ''} onError={e => { e.target.style.display = 'none'; }} />}
+                                            {dUrl && <img className="db-rank-emblem" src={dUrl} alt={dTier || ''}
+    onError={e => {
+        const fb = dbEmblemFallback(dTier);
+        if (fb && e.target.src !== fb) { e.target.src = fb; }
+        else { e.target.style.display = 'none'; }
+    }} />}
                                             <div>
                                                 <div className="db-rank-label" style={{ color: dCol }}>{dbRankLabel(dTier, dRank)}</div>
                                                 {dTier && dLp !== null && dLp !== undefined && (
