@@ -36,26 +36,47 @@ export default function App() {
         }
         setLoading(true);
         setPlayersData({ p1: null, p2: null });
-        setSyncMsg('Synchronisation Riot en cours…');
         try {
-            // 1. Sync d'abord — garantit des données fraîches
-            const syncOne = (tag) => {
+            // 1. Réveil du serveur Render (cold start peut prendre 30-60s)
+            setSyncMsg('Connexion au serveur…');
+            const wakeCtrl = new AbortController();
+            const wakeTimer = setTimeout(() => wakeCtrl.abort(), 90000);
+            try {
+                await fetch(`${API_BASE}/ping?_t=${Date.now()}`, { signal: wakeCtrl.signal });
+            } catch { /* serveur pas dispo, on essaie quand même */ } finally {
+                clearTimeout(wakeTimer);
+            }
+
+            // 2. Sync Riot (serveur chaud, timeout court)
+            setSyncMsg('Synchronisation Riot en cours…');
+            const syncOne = async (tag) => {
                 const ctrl = new AbortController();
-                const t = setTimeout(() => ctrl.abort(), 60000);
-                return fetch(`${API_BASE}/sync?riotId=${encodeURIComponent(tag)}&_t=${Date.now()}`, { signal: ctrl.signal })
-                    .then(r => r.json())
-                    .catch(() => ({ added: 0 }))
-                    .finally(() => clearTimeout(t));
+                const t = setTimeout(() => ctrl.abort(), 30000);
+                try {
+                    const r = await fetch(`${API_BASE}/sync?riotId=${encodeURIComponent(tag)}&_t=${Date.now()}`, { signal: ctrl.signal });
+                    if (!r.ok) return { added: 0, failed: true };
+                    const data = await r.json();
+                    return data.error ? { added: 0, failed: true } : data;
+                } catch {
+                    return { added: 0, failed: true };
+                } finally {
+                    clearTimeout(t);
+                }
             };
             const [s1, s2] = await Promise.all([syncOne(p1), syncOne(p2)]);
 
-            // 2. Fetch données fraîches depuis Supabase
+            // 3. Fetch données fraîches depuis Supabase
             setSyncMsg('Chargement des données…');
             const [d1, d2] = await Promise.all([fetchAll(p1, q), fetchAll(p2, q)]);
             setPlayersData({ p1: { ...d1, rawTag: p1 }, p2: { ...d2, rawTag: p2 } });
 
+            const failed = s1.failed || s2.failed;
             const newCount = (s1.added || 0) + (s2.added || 0);
-            showToast(newCount > 0 ? `✅ ${newCount} nouveau(x) match(s) ajouté(s)` : '✅ Données à jour');
+            if (failed) {
+                showToast('⚠️ Sync incomplet — vérifie la clé Riot ou réessaie', 5000);
+            } else {
+                showToast(newCount > 0 ? `✅ ${newCount} nouveau(x) match(s) ajouté(s)` : '✅ Données à jour');
+            }
         } catch (e) {
             console.error(e);
         } finally {
