@@ -126,6 +126,73 @@ app.get('/import', async (req, res) => {
     }
 });
 
+// ─── SYNC (synchrone, 20 matchs max) ──────────────────────
+// Attend la fin avant de répondre → le client peut attendre fetchAll
+app.get('/sync', async (req, res) => {
+    try {
+        const riotIdRaw = req.query.riotId;
+        if (!riotIdRaw?.includes('#'))
+            return res.status(400).json({ error: 'Format: Pseudo#TAG' });
+
+        const [gameName, tagLine] = riotIdRaw.split('#').map(s => s.trim());
+        const fullRiotId = `${gameName}#${tagLine}`;
+        console.log(`\n🔄 SYNC : ${fullRiotId}`);
+
+        // 1. PUUID
+        const { data: acc } = await getRiot(
+            `${REGION_HOST}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`
+        );
+        const { puuid } = acc;
+
+        // 2. Rangs
+        try {
+            const { data: sum } = await getRiot(`${PLATFORM_HOST}/lol/summoner/v4/summoners/by-puuid/${puuid}`);
+            const { data: leagues } = await getRiot(`${PLATFORM_HOST}/lol/league/v4/entries/by-summoner/${sum.id}`);
+            let rankData = {
+                puuid, riot_id: fullRiotId, summoner_id: sum.id,
+                profile_icon_id: sum.profileIconId, summoner_level: sum.summonerLevel,
+                updated_at: new Date().toISOString()
+            };
+            leagues.forEach(e => {
+                if (e.queueType === 'RANKED_SOLO_5x5')
+                    rankData = { ...rankData, solo_tier: e.tier, solo_rank: e.rank, solo_lp: e.leaguePoints, solo_wins: e.wins, solo_losses: e.losses };
+                if (e.queueType === 'RANKED_FLEX_SR')
+                    rankData = { ...rankData, flex_tier: e.tier, flex_rank: e.rank, flex_lp: e.leaguePoints };
+            });
+            await supabase.from('player_ranks').upsert(rankData, { onConflict: 'puuid' });
+            console.log('   ✅ Rangs à jour');
+        } catch (e) { console.warn('   ⚠️ Rangs ignorés:', e.message); }
+
+        // 3. Derniers 20 matchs seulement
+        const { data: matchIds } = await getRiot(
+            `${REGION_HOST}/lol/match/v5/matches/by-puuid/${puuid}/ids?start=0&count=20`
+        );
+
+        let added = 0, skipped = 0;
+        for (const matchId of matchIds) {
+            const { data: exist } = await supabase
+                .from('bronze_matches').select('match_id').eq('match_id', matchId).maybeSingle();
+            if (exist) { skipped++; continue; }
+            try {
+                const { data: detail } = await getRiot(`${REGION_HOST}/lol/match/v5/matches/${matchId}`);
+                const { error: insErr } = await supabase.from('bronze_matches')
+                    .insert({ match_id: matchId, match_data: detail });
+                if (!insErr || insErr?.code === '23505') added++;
+                await sleep(1200);
+            } catch (e) {
+                console.error(`   ❌ ${matchId}:`, e.message);
+            }
+        }
+
+        console.log(`   ✅ Sync terminé : +${added} nouveaux | ${skipped} déjà en base`);
+        res.json({ ok: true, added, skipped });
+
+    } catch (err) {
+        console.error('Sync error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ─── LIVE GAME ────────────────────────────────────────────
 // GET /live?riotId=Name%23TAG   ou   GET /live?summonerId=xxx
 app.get('/live', async (req, res) => {

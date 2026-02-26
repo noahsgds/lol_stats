@@ -35,15 +35,20 @@ export default function App() {
         }
         setLoading(true);
         setPlayersData({ p1: null, p2: null });
-        fetch(`${API_BASE}/import?riotId=${encodeURIComponent(p1)}`).catch(() => {});
-        fetch(`${API_BASE}/import?riotId=${encodeURIComponent(p2)}`).catch(() => {});
-        showToast('🔄 Mise à jour des données en arrière-plan…');
+        showToast('🔄 Synchronisation Riot en cours…');
         try {
+            // Attendre la fin du sync des deux joueurs avant de lire Supabase
+            await Promise.all([
+                fetch(`${API_BASE}/sync?riotId=${encodeURIComponent(p1)}`).then(r => r.json()).catch(() => ({})),
+                fetch(`${API_BASE}/sync?riotId=${encodeURIComponent(p2)}`).then(r => r.json()).catch(() => ({})),
+            ]);
+            showToast('✅ Données à jour — chargement…');
             const [d1, d2] = await Promise.all([fetchAll(p1, q), fetchAll(p2, q)]);
             console.log('J1', d1); console.log('J2', d2);
             setPlayersData({ p1: { ...d1, rawTag: p1 }, p2: { ...d2, rawTag: p2 } });
         } catch (e) {
             console.error(e);
+            showToast('❌ Erreur lors de la synchronisation');
         } finally {
             setLoading(false);
         }
