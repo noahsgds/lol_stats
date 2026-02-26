@@ -106,6 +106,7 @@ app.get('/sync', async (req, res) => {
                             const { data: detail } = await getRiot(`${REGION_HOST}/lol/match/v5/matches/${matchId}`);
                             const { error: insErr } = await supabase.from('bronze_matches')
                                 .insert({ match_id: matchId, match_data: detail });
+                            if (insErr && insErr.code !== '23505') console.error(`❌ Insert [${insErr.code}] ${insErr.message}`);
                             return !insErr || insErr?.code === '23505';
                         } catch (e) {
                             console.error(`❌ ${matchId}:`, e.message);
