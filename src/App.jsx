@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { fetchAll } from './lib/supabase.js';
-import { API_BASE } from './lib/utils.js';
+import { API_BASE, computeLpMap } from './lib/utils.js';
 import TopBar from './components/TopBar.jsx';
 import ProfileCard from './components/ProfileCard.jsx';
 import MatchHistory from './components/MatchHistory.jsx';
@@ -128,6 +128,9 @@ export default function App() {
     }, [soloInput, queue, showToast]);
 
     const { p1, p2 } = playersData;
+    const lpMap1 = p1?.rank?.rank_history ? computeLpMap(p1.rank.rank_history) : {};
+    const lpMap2 = p2?.rank?.rank_history ? computeLpMap(p2.rank.rank_history) : {};
+    const soloLpMap = soloData?.rank?.rank_history ? computeLpMap(soloData.rank.rank_history) : {};
 
     return (
         <>
@@ -157,7 +160,7 @@ export default function App() {
                             {soloSyncMsg || 'Chargement…'}
                         </div>
                     ) : soloData ? (
-                        <PlayerDashboard data={soloData} pid="p1" onClose={() => setSoloData(null)} inline />
+                        <PlayerDashboard data={soloData} pid="p1" onClose={() => setSoloData(null)} inline lpMap={soloLpMap} />
                     ) : <Empty />
                 )}
 
@@ -175,7 +178,7 @@ export default function App() {
                                 <div className="card">
                                     <ProfileCard data={p1} isP2={false} onDashboard={() => setDashPid('p1')} />
                                     <div className="card-head"><div className="ch-bar ch-p1" />Historique récent</div>
-                                    <MatchHistory history={p1?.history} loading={false} trackedTag={p1?.rawTag} />
+                                    <MatchHistory history={p1?.history} loading={false} trackedTag={p1?.rawTag} lpMap={lpMap1} />
                                 </div>
                             </div>
                             {/* CENTER */}
@@ -206,7 +209,7 @@ export default function App() {
                                 <div className="card">
                                     <ProfileCard data={p2} isP2={true} onDashboard={() => setDashPid('p2')} />
                                     <div className="card-head"><div className="ch-bar ch-p2" />Historique récent</div>
-                                    <MatchHistory history={p2?.history} loading={false} trackedTag={p2?.rawTag} />
+                                    <MatchHistory history={p2?.history} loading={false} trackedTag={p2?.rawTag} lpMap={lpMap2} />
                                 </div>
                             </div>
                         </div>
@@ -225,6 +228,7 @@ export default function App() {
                     data={playersData[dashPid]}
                     pid={dashPid}
                     onClose={() => setDashPid(null)}
+                    lpMap={dashPid === 'p1' ? lpMap1 : lpMap2}
                 />
             )}
 

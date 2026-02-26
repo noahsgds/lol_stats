@@ -70,51 +70,47 @@ app.get('/sync', async (req, res) => {
         const sum = sumRes.data;
         const matchIds = matchIdsRes.data;
 
-        // 3. Batch check DB + rank upsert en parallèle
-        const [existingRes] = await Promise.all([
-            supabase.from('bronze_matches').select('match_id').in('match_id', matchIds),
-            // Rank upsert fire-and-forget
-            (async () => {
-                try {
-                    let rankData = {
-                        puuid, riot_id: fullRiotId, summoner_id: sum.id,
-                        profile_icon_id: sum.profileIconId, summoner_level: sum.summonerLevel,
-                        updated_at: new Date().toISOString()
-                    };
-                    (leaguesRes.data || []).forEach(e => {
-                        if (e.queueType === 'RANKED_SOLO_5x5')
-                            rankData = { ...rankData, solo_tier: e.tier, solo_rank: e.rank, solo_lp: e.leaguePoints, solo_wins: e.wins, solo_losses: e.losses };
-                        if (e.queueType === 'RANKED_FLEX_SR')
-                            rankData = { ...rankData, flex_tier: e.tier, flex_rank: e.rank, flex_lp: e.leaguePoints, flex_wins: e.wins, flex_losses: e.losses };
-                    });
-                    // Snapshot historique de rang (colonne rank_history JSONB)
-                    try {
-                        const { data: prev } = await supabase.from('player_ranks')
-                            .select('rank_history').eq('puuid', puuid).maybeSingle();
-                        const history = prev?.rank_history || [];
-                        const today = new Date().toISOString().split('T')[0];
-                        const last = history[history.length - 1];
-                        const changed = !last
-                            || last.solo_tier !== (rankData.solo_tier || null)
-                            || last.solo_rank !== (rankData.solo_rank || null)
-                            || last.flex_tier !== (rankData.flex_tier || null);
-                        if (!last || last.date !== today || changed) {
-                            history.push({
-                                date: today,
-                                solo_tier: rankData.solo_tier || null, solo_rank: rankData.solo_rank || null, solo_lp: rankData.solo_lp ?? null,
-                                flex_tier: rankData.flex_tier || null, flex_rank: rankData.flex_rank || null, flex_lp: rankData.flex_lp ?? null,
-                            });
-                            rankData.rank_history = history.slice(-30);
-                        }
-                    } catch { /* rank_history column may not exist yet */ }
-                    await supabase.from('player_ranks').upsert(rankData, { onConflict: 'puuid' });
-                } catch (e) { console.warn('Rangs ignorés:', e.message); }
-            })(),
-        ]);
+        // 3. Batch check DB
+        const existingRes = await supabase.from('bronze_matches').select('match_id').in('match_id', matchIds);
 
-        // 4. Fetch tous les nouveaux matchs en parallèle (2000 req/10s → pas de sleep nécessaire)
+        // 4. Calcul des nouveaux matchs
         const existingSet = new Set((existingRes.data || []).map(r => r.match_id));
         const newMatchIds = matchIds.filter(id => !existingSet.has(id));
+
+        // Rank upsert fire-and-forget (après newMatchIds pour LP tracking par partie)
+        (async () => {
+            try {
+                let rankData = {
+                    puuid, riot_id: fullRiotId, summoner_id: sum.id,
+                    profile_icon_id: sum.profileIconId, summoner_level: sum.summonerLevel,
+                    updated_at: new Date().toISOString()
+                };
+                (leaguesRes.data || []).forEach(e => {
+                    if (e.queueType === 'RANKED_SOLO_5x5')
+                        rankData = { ...rankData, solo_tier: e.tier, solo_rank: e.rank, solo_lp: e.leaguePoints, solo_wins: e.wins, solo_losses: e.losses };
+                    if (e.queueType === 'RANKED_FLEX_SR')
+                        rankData = { ...rankData, flex_tier: e.tier, flex_rank: e.rank, flex_lp: e.leaguePoints, flex_wins: e.wins, flex_losses: e.losses };
+                });
+                // Snapshot rang avec match_ids pour LP tracking
+                const { data: prevRank } = await supabase.from('player_ranks')
+                    .select('rank_history').eq('puuid', puuid).maybeSingle();
+                const rankHist = prevRank?.rank_history || [];
+                rankHist.push({
+                    date: new Date().toISOString().split('T')[0],
+                    timestamp: new Date().toISOString(),
+                    solo_tier: rankData.solo_tier || null, solo_rank: rankData.solo_rank || null, solo_lp: rankData.solo_lp ?? null,
+                    flex_tier: rankData.flex_tier || null, flex_rank: rankData.flex_rank || null, flex_lp: rankData.flex_lp ?? null,
+                    match_ids: newMatchIds,
+                });
+                rankData.rank_history = rankHist.slice(-50);
+                const { error: rankErr } = await supabase.from('player_ranks').upsert(rankData, { onConflict: 'puuid' });
+                if (rankErr) {
+                    console.warn('Rank upsert échoué, retry sans rank_history:', rankErr.message);
+                    const { rank_history: _ign, ...safeRankData } = rankData;
+                    await supabase.from('player_ranks').upsert(safeRankData, { onConflict: 'puuid' });
+                }
+            } catch (e) { console.warn('Rangs ignorés:', e.message); }
+        })();
         console.log(`   📋 ${newMatchIds.length} nouveau(x) sur ${matchIds.length}`);
 
         let added = 0;
@@ -174,6 +170,12 @@ app.get('/import', async (req, res) => {
         const sum = sumRes.data;
         const matchIds = matchIdsRes.data;
 
+        // Batch check existants (avant rank upsert pour avoir newMatchIds pour LP tracking)
+        const { data: existingRows } = await supabase.from('bronze_matches').select('match_id').in('match_id', matchIds);
+        const existingSet = new Set((existingRows || []).map(r => r.match_id));
+        const newMatchIds = matchIds.filter(id => !existingSet.has(id));
+        console.log(`   📋 ${newMatchIds.length} nouveaux sur ${matchIds.length}`);
+
         let rankData = {
             puuid, riot_id: fullRiotId, summoner_id: sum.id,
             profile_icon_id: sum.profileIconId, summoner_level: sum.summonerLevel,
@@ -185,33 +187,24 @@ app.get('/import', async (req, res) => {
             if (e.queueType === 'RANKED_FLEX_SR')
                 rankData = { ...rankData, flex_tier: e.tier, flex_rank: e.rank, flex_lp: e.leaguePoints, flex_wins: e.wins, flex_losses: e.losses };
         });
-        // Snapshot historique de rang
-        try {
-            const { data: prev } = await supabase.from('player_ranks')
-                .select('rank_history').eq('puuid', puuid).maybeSingle();
-            const history = prev?.rank_history || [];
-            const today = new Date().toISOString().split('T')[0];
-            const last = history[history.length - 1];
-            const changed = !last
-                || last.solo_tier !== (rankData.solo_tier || null)
-                || last.solo_rank !== (rankData.solo_rank || null)
-                || last.flex_tier !== (rankData.flex_tier || null);
-            if (!last || last.date !== today || changed) {
-                history.push({
-                    date: today,
-                    solo_tier: rankData.solo_tier || null, solo_rank: rankData.solo_rank || null, solo_lp: rankData.solo_lp ?? null,
-                    flex_tier: rankData.flex_tier || null, flex_rank: rankData.flex_rank || null, flex_lp: rankData.flex_lp ?? null,
-                });
-                rankData.rank_history = history.slice(-30);
-            }
-        } catch { /* rank_history column may not exist yet */ }
-        await supabase.from('player_ranks').upsert(rankData, { onConflict: 'puuid' });
-
-        // Batch check existants
-        const { data: existingRows } = await supabase.from('bronze_matches').select('match_id').in('match_id', matchIds);
-        const existingSet = new Set((existingRows || []).map(r => r.match_id));
-        const newMatchIds = matchIds.filter(id => !existingSet.has(id));
-        console.log(`   📋 ${newMatchIds.length} nouveaux sur ${matchIds.length}`);
+        // Snapshot rang avec match_ids pour LP tracking
+        const { data: prevRank } = await supabase.from('player_ranks')
+            .select('rank_history').eq('puuid', puuid).maybeSingle();
+        const rankHist = prevRank?.rank_history || [];
+        rankHist.push({
+            date: new Date().toISOString().split('T')[0],
+            timestamp: new Date().toISOString(),
+            solo_tier: rankData.solo_tier || null, solo_rank: rankData.solo_rank || null, solo_lp: rankData.solo_lp ?? null,
+            flex_tier: rankData.flex_tier || null, flex_rank: rankData.flex_rank || null, flex_lp: rankData.flex_lp ?? null,
+            match_ids: newMatchIds,
+        });
+        rankData.rank_history = rankHist.slice(-50);
+        const { error: rankErr } = await supabase.from('player_ranks').upsert(rankData, { onConflict: 'puuid' });
+        if (rankErr) {
+            console.warn('Rank upsert échoué, retry sans rank_history:', rankErr.message);
+            const { rank_history: _ign, ...safeRankData } = rankData;
+            await supabase.from('player_ranks').upsert(safeRankData, { onConflict: 'puuid' });
+        }
 
         // Fetch par batch de 10 en parallèle
         let added = 0, errors = 0;

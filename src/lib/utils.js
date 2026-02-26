@@ -38,6 +38,25 @@ export function getQ(qid) {
     return m[qid] || `Q${qid || '?'}`;
 }
 
+// Calcule un map match_id → LP estimé depuis l'historique de rang (rank_history)
+export function computeLpMap(rankHistory) {
+    const map = {};
+    if (!rankHistory?.length) return map;
+    for (let i = 1; i < rankHistory.length; i++) {
+        const prev = rankHistory[i - 1];
+        const curr = rankHistory[i];
+        const ids = curr.match_ids || [];
+        if (!ids.length) continue;
+        // LP delta Solo/Duo (seulement si même division pour éviter les artefacts de promotion)
+        if (curr.solo_lp !== null && prev.solo_lp !== null) {
+            const lpDelta = (curr.solo_lp ?? 0) - (prev.solo_lp ?? 0);
+            const perGame = Math.round(lpDelta / ids.length);
+            ids.forEach(id => { if (!(id in map)) map[id] = perGame; });
+        }
+    }
+    return map;
+}
+
 export function computeChampStats(history) {
     const map = {};
     (history || []).forEach(m => {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { D_VER, getChampKey, getQ, timeAgo, fmtK } from '../lib/utils.js';
 import MatchDetailModal from './MatchDetail.jsx';
 
-export default function MatchHistory({ history, loading, trackedTag }) {
+export default function MatchHistory({ history, loading, trackedTag, lpMap = {} }) {
     const [selectedMatchId, setSelectedMatchId] = useState(null);
 
     if (loading) return null;
@@ -26,6 +26,7 @@ export default function MatchHistory({ history, loading, trackedTag }) {
                         key={i} m={m} i={i}
                         onOpen={() => m.match_id && setSelectedMatchId(m.match_id)}
                         hasDetail={!!m.match_id}
+                        lpChange={m.match_id && (m.queue_id === 420 || m.queue_id === 440) ? lpMap[m.match_id] : undefined}
                     />
                 ))}
             </div>
@@ -41,7 +42,7 @@ export default function MatchHistory({ history, loading, trackedTag }) {
     );
 }
 
-function MatchRow({ m, i, onOpen, hasDetail }) {
+function MatchRow({ m, i, onOpen, hasDetail, lpChange }) {
     const ck  = getChampKey(m.champion_name);
     const min = Math.floor((m.game_duration || 0) / 60);
     const sec = String((m.game_duration || 0) % 60).padStart(2, '0');
@@ -102,6 +103,11 @@ function MatchRow({ m, i, onOpen, hasDetail }) {
                     </div>
                 </div>
                 <div className="m-badges">
+                    {lpChange !== undefined && (
+                        <span className={`badge b-lp ${lpChange >= 0 ? 'b-lp-win' : 'b-lp-loss'}`}>
+                            {lpChange >= 0 ? '+' : ''}{lpChange} LP
+                        </span>
+                    )}
                     {kda >= 4 && <span className="badge b-mvp">MVP</span>}
                     {m.kills >= 5 && m.deaths <= 1 && <span className="badge b-dominant">Dominant</span>}
                     {m.deaths >= 8 && <span className="badge b-int">INT</span>}

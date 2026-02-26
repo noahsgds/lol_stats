@@ -191,7 +191,7 @@ function WinLossSplit({ history, cssColor }) {
 
 // ─── FULL MATCH LOG ───────────────────────────────────────
 
-function MatchLog({ history, trackedTag }) {
+function MatchLog({ history, trackedTag, lpMap = {} }) {
     if (!history?.length) return null;
     const [expanded, setExpanded] = useState(false);
     const [selectedMatchId, setSelectedMatchId] = useState(null);
@@ -207,6 +207,7 @@ function MatchLog({ history, trackedTag }) {
                                 <th style={{ minWidth: 130 }}>Champion</th>
                                 <th>File</th>
                                 <th>Rés.</th>
+                                <th>LP</th>
                                 <th title="Grade de performance (KDA 35% + CS/min 20% + Dmg/min 30% + Vision 15%)">Perf</th>
                                 <th>K / D / A</th>
                                 <th>CS/min</th>
@@ -262,6 +263,11 @@ function MatchLog({ history, trackedTag }) {
                                                 {m.win ? 'V' : 'D'}
                                             </span>
                                         </td>
+                                        <td>{(() => {
+                                            const lp = m.match_id && (m.queue_id === 420 || m.queue_id === 440) ? lpMap[m.match_id] : undefined;
+                                            if (lp === undefined) return <span style={{ color: 'var(--text-dim)', fontSize: '10px' }}>—</span>;
+                                            return <span style={{ fontSize: '11px', fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: lp >= 0 ? 'var(--win)' : 'var(--loss)' }}>{lp >= 0 ? '+' : ''}{lp}</span>;
+                                        })()}</td>
                                         <td>
                                             <span style={{ fontSize: '13px', fontWeight: 900, fontFamily: "'JetBrains Mono',monospace", color: grade.color }}>{grade.label}</span>
                                         </td>
@@ -559,7 +565,7 @@ function dbRankLabel(tier, rank) {
     return `${t} ${rank || ''}`;
 }
 
-export default function PlayerDashboard({ data, pid, onClose, inline = false }) {
+export default function PlayerDashboard({ data, pid, onClose, inline = false, lpMap = {} }) {
     const isP2     = pid === 'p2';
     const color    = isP2 ? '#e84d00' : '#f0a500';
     const cssColor = isP2 ? 'var(--p2)' : 'var(--p1)';
@@ -804,7 +810,7 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false }) 
                     </Section>
 
                     {/* ── FULL MATCH LOG ── */}
-                    <MatchLog history={h} trackedTag={data?.rawTag} />
+                    <MatchLog history={h} trackedTag={data?.rawTag} lpMap={lpMap} />
 
                     {/* ── QUEUE BREAKDOWN ── */}
                     <QueueBreakdown history={h} cssColor={cssColor} />
