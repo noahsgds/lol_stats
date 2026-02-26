@@ -40,6 +40,7 @@ const getRiot = async (url, retries = 3) => {
             }
         }
     }
+    throw new Error(`Rate limit non résolu après ${retries} tentatives`);
 };
 
 // ─── SYNC (rapide, 20 matchs, tout en parallèle) ──────────
@@ -97,20 +98,24 @@ app.get('/sync', async (req, res) => {
 
         let added = 0;
         if (newMatchIds.length > 0) {
-            const results = await Promise.all(
-                newMatchIds.map(async matchId => {
-                    try {
-                        const { data: detail } = await getRiot(`${REGION_HOST}/lol/match/v5/matches/${matchId}`);
-                        const { error: insErr } = await supabase.from('bronze_matches')
-                            .insert({ match_id: matchId, match_data: detail });
-                        return !insErr || insErr?.code === '23505';
-                    } catch (e) {
-                        console.error(`❌ ${matchId}:`, e.message);
-                        return false;
-                    }
-                })
-            );
-            added = results.filter(Boolean).length;
+            for (let i = 0; i < newMatchIds.length; i += 5) {
+                const batch = newMatchIds.slice(i, i + 5);
+                const results = await Promise.all(
+                    batch.map(async matchId => {
+                        try {
+                            const { data: detail } = await getRiot(`${REGION_HOST}/lol/match/v5/matches/${matchId}`);
+                            const { error: insErr } = await supabase.from('bronze_matches')
+                                .insert({ match_id: matchId, match_data: detail });
+                            return !insErr || insErr?.code === '23505';
+                        } catch (e) {
+                            console.error(`❌ ${matchId}:`, e.message);
+                            return false;
+                        }
+                    })
+                );
+                added += results.filter(Boolean).length;
+                if (i + 5 < newMatchIds.length) await sleep(300);
+            }
         }
 
         console.log(`   ✅ +${added} nouveaux | ${existingSet.size} déjà en base`);
