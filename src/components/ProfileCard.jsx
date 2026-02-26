@@ -1,23 +1,63 @@
+import { useState } from 'react';
 import { Doughnut } from 'react-chartjs-2';
 import { D_VER, toFixed, toWR, fmtK } from '../lib/utils.js';
 
+const TIER_SHORT = {
+    IRON: 'Fer', BRONZE: 'Bronze', SILVER: 'Argent', GOLD: 'Or',
+    PLATINUM: 'Platine', EMERALD: 'Émeraude', DIAMOND: 'Diamant',
+    MASTER: 'Maître', GRANDMASTER: 'Grand Maître', CHALLENGER: 'Challenger',
+};
+const TIER_COLOR = {
+    IRON: '#9e9e9e', BRONZE: '#cd7f32', SILVER: '#a8b0b8', GOLD: '#f0a500',
+    PLATINUM: '#00e0d0', EMERALD: '#4ade80', DIAMOND: '#4fc3f7',
+    MASTER: '#9b59b6', GRANDMASTER: '#e74c3c', CHALLENGER: '#f1c40f',
+};
+const EMBLEM_CDN = 'https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/ranked-emblem/';
+const emblemUrl = tier => tier ? `${EMBLEM_CDN}emblem-${tier.toLowerCase()}.png` : null;
+
+function rankLabel(tier, rank) {
+    if (!tier) return 'Non classé';
+    const t = TIER_SHORT[tier] || tier;
+    if (['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(tier)) return t;
+    return `${t} ${rank || ''}`;
+}
+
+function fmtDate(dateStr) {
+    if (!dateStr) return '';
+    const [y, m, d] = dateStr.split('-');
+    return `${d}/${m}/${y.slice(2)}`;
+}
+
 export default function ProfileCard({ data, isP2, onDashboard }) {
     const { rank: r, global: g, history: h } = data;
-    const color  = isP2 ? 'var(--p2)' : 'var(--p1)';
-    const cls    = isP2 ? 'p2-color' : 'p1-color';
-    const name   = (r.riot_id || data.rawTag || '').split('#')[0];
+    const [activeQueue, setActiveQueue] = useState('solo');
+
+    const color = isP2 ? 'var(--p2)' : 'var(--p1)';
+    const cls   = isP2 ? 'p2-color' : 'p1-color';
+    const name  = (r.riot_id || data.rawTag || '').split('#')[0];
+    const tag   = (r.riot_id || data.rawTag || '').split('#')[1];
+
     const wr     = parseFloat(toWR(g.win_rate));
     const total  = parseInt(g.total_games) || 0;
     const wins   = Math.round((wr / 100) * total);
     const losses = total - wins;
-    const tier   = r.solo_tier || 'UNRANKED';
-    const lp     = r.solo_lp !== undefined ? ` · ${r.solo_lp} LP` : '';
 
-    const avgDmg = Math.round(parseFloat(g.avg_damage) || 0);
-    const avgCS  = Math.round(parseFloat(g.avg_cs) || 0);
-    const avgVis = Number(parseFloat(g.avg_vision) || 0).toFixed(1);
+    // Queue-specific rank data
+    const q         = activeQueue;
+    const curTier   = q === 'solo' ? r.solo_tier   : r.flex_tier;
+    const curRank   = q === 'solo' ? r.solo_rank   : r.flex_rank;
+    const curLp     = q === 'solo' ? r.solo_lp     : r.flex_lp;
+    const curWins   = q === 'solo' ? (r.solo_wins  ?? null) : (r.flex_wins  ?? null);
+    const curLosses = q === 'solo' ? (r.solo_losses ?? null) : (r.flex_losses ?? null);
+    const qGames    = (curWins ?? 0) + (curLosses ?? 0);
+    const qWrPct    = qGames > 0 ? Math.round((curWins ?? 0) / qGames * 100) : null;
+    const tierColor = TIER_COLOR[curTier] || 'var(--text-dim)';
+    const eUrl      = emblemUrl(curTier);
 
-    const last10   = (h || []).slice(0, 10);
+    // Rank history snapshots (most recent first)
+    const snapshots = (r.rank_history || []).slice(-6).reverse();
+
+    // Donut chart
     const donutData = {
         datasets: [{
             data: [wins || 1, losses || 1],
@@ -30,9 +70,16 @@ export default function ProfileCard({ data, isP2, onDashboard }) {
         plugins: { legend: { display: false }, datalabels: { display: false } },
     };
 
+    const avgDmg = Math.round(parseFloat(g.avg_damage) || 0);
+    const avgCS  = Math.round(parseFloat(g.avg_cs) || 0);
+    const avgVis = Number(parseFloat(g.avg_vision) || 0).toFixed(1);
+    const last10 = (h || []).slice(0, 10);
+
     return (
         <>
             <div className="profile-box fade-in db-clickable" onClick={onDashboard} title="Voir le dashboard">
+
+                {/* ── Header : avatar + nom ── */}
                 <div className="profile-header">
                     <div className="avatar-frame">
                         <img
@@ -40,33 +87,97 @@ export default function ProfileCard({ data, isP2, onDashboard }) {
                             onError={e => { e.target.src = `https://ddragon.leagueoflegends.com/cdn/${D_VER}/img/profileicon/29.png`; }}
                             alt=""
                         />
-                        <div className={`rank-chip ${tier === 'UNRANKED' ? 'unranked' : ''}`}>
-                            {tier === 'UNRANKED' ? 'UNRANKED' : `${tier.slice(0, 1)} ${r.solo_rank || ''}`}
-                        </div>
                     </div>
-                    <div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             <div className={`profile-name ${cls}`}>{name}</div>
                             {r.summoner_level ? (
-                                <span style={{
-                                    fontSize: '10px', fontWeight: 700,
-                                    fontFamily: "'JetBrains Mono', monospace",
-                                    background: 'var(--border)', color: 'var(--text-mid)',
-                                    padding: '2px 7px', borderRadius: '4px', flexShrink: 0,
-                                }}>Niv.{r.summoner_level}</span>
+                                <span className="pc-level-badge">Niv.{r.summoner_level}</span>
                             ) : null}
                         </div>
-                        <div className="profile-rank-text">
-                            {tier === 'UNRANKED' ? 'Non classé' : `Solo: ${tier} ${r.solo_rank || ''}${lp}`}
-                        </div>
-                        {r.flex_tier ? (
-                            <div className="profile-rank-text" style={{ fontSize: '10px', opacity: 0.75 }}>
-                                Flex: {r.flex_tier} {r.flex_rank || ''} · {r.flex_lp ?? '?'} LP
-                            </div>
-                        ) : null}
+                        {tag && <div className="pc-tag">#{tag}</div>}
                     </div>
                 </div>
 
+                {/* ── Section rang ── */}
+                <div className="pc-rank-section" onClick={e => e.stopPropagation()}>
+                    {/* Toggle Solo / Flex */}
+                    <div className="pc-queue-tabs">
+                        <button
+                            className={`pc-tab ${q === 'solo' ? 'active' : ''}`}
+                            onClick={() => setActiveQueue('solo')}
+                        >Solo / Duo</button>
+                        <button
+                            className={`pc-tab ${q === 'flex' ? 'active' : ''}`}
+                            onClick={() => setActiveQueue('flex')}
+                        >Flex</button>
+                    </div>
+
+                    {/* Emblème + infos rang */}
+                    <div className="pc-rank-display">
+                        <div className="pc-emblem-wrap">
+                            {eUrl ? (
+                                <img
+                                    className="pc-rank-emblem"
+                                    src={eUrl}
+                                    alt={curTier || ''}
+                                    onError={e => { e.target.style.opacity = '.15'; }}
+                                />
+                            ) : (
+                                <div className="pc-rank-emblem pc-rank-emblem-empty">?</div>
+                            )}
+                        </div>
+                        <div className="pc-rank-info">
+                            <div className="pc-rank-name" style={{ color: tierColor }}>
+                                {rankLabel(curTier, curRank)}
+                            </div>
+                            {curLp !== null && curLp !== undefined && curTier && (
+                                <div className="pc-rank-lp">{curLp} LP</div>
+                            )}
+                            {qWrPct !== null && (
+                                <div className={`pc-rank-wr ${qWrPct >= 50 ? 'pc-wr-win' : 'pc-wr-loss'}`}>
+                                    {qWrPct}% <span className="pc-wr-games">({qGames}G)</span>
+                                </div>
+                            )}
+                            {!curTier && (
+                                <div className="pc-rank-lp" style={{ color: 'var(--text-dim)' }}>Aucune partie classée</div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Historique des rangs */}
+                    {snapshots.length > 0 && (
+                        <div className="pc-history">
+                            <div className="pc-history-title">Historique des rangs</div>
+                            {snapshots.map((snap, i) => {
+                                const sTier = snap[`${q}_tier`];
+                                const sRank = snap[`${q}_rank`];
+                                const sLp   = snap[`${q}_lp`];
+                                const sUrl  = emblemUrl(sTier);
+                                return (
+                                    <div key={i} className="pc-history-row">
+                                        <div className="pc-history-emblem-wrap">
+                                            {sUrl ? (
+                                                <img className="pc-history-emblem" src={sUrl} alt="" onError={e => { e.target.style.opacity = '.2'; }} />
+                                            ) : (
+                                                <div className="pc-history-emblem pc-history-emblem-empty" />
+                                            )}
+                                        </div>
+                                        <span className="pc-history-rank" style={{ color: TIER_COLOR[sTier] || 'var(--text-dim)' }}>
+                                            {rankLabel(sTier, sRank)}
+                                        </span>
+                                        {sLp !== null && sLp !== undefined && sTier && (
+                                            <span className="pc-history-lp">{sLp} LP</span>
+                                        )}
+                                        <span className="pc-history-date">{fmtDate(snap.date)}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+
+                {/* ── Stats globales ── */}
                 <div className="profile-bigstats">
                     <div className="donut-wrap">
                         <Doughnut data={donutData} options={donutOpts} />

@@ -85,8 +85,28 @@ app.get('/sync', async (req, res) => {
                         if (e.queueType === 'RANKED_SOLO_5x5')
                             rankData = { ...rankData, solo_tier: e.tier, solo_rank: e.rank, solo_lp: e.leaguePoints, solo_wins: e.wins, solo_losses: e.losses };
                         if (e.queueType === 'RANKED_FLEX_SR')
-                            rankData = { ...rankData, flex_tier: e.tier, flex_rank: e.rank, flex_lp: e.leaguePoints };
+                            rankData = { ...rankData, flex_tier: e.tier, flex_rank: e.rank, flex_lp: e.leaguePoints, flex_wins: e.wins, flex_losses: e.losses };
                     });
+                    // Snapshot historique de rang (colonne rank_history JSONB)
+                    try {
+                        const { data: prev } = await supabase.from('player_ranks')
+                            .select('rank_history').eq('puuid', puuid).maybeSingle();
+                        const history = prev?.rank_history || [];
+                        const today = new Date().toISOString().split('T')[0];
+                        const last = history[history.length - 1];
+                        const changed = !last
+                            || last.solo_tier !== (rankData.solo_tier || null)
+                            || last.solo_rank !== (rankData.solo_rank || null)
+                            || last.flex_tier !== (rankData.flex_tier || null);
+                        if (!last || last.date !== today || changed) {
+                            history.push({
+                                date: today,
+                                solo_tier: rankData.solo_tier || null, solo_rank: rankData.solo_rank || null, solo_lp: rankData.solo_lp ?? null,
+                                flex_tier: rankData.flex_tier || null, flex_rank: rankData.flex_rank || null, flex_lp: rankData.flex_lp ?? null,
+                            });
+                            rankData.rank_history = history.slice(-30);
+                        }
+                    } catch { /* rank_history column may not exist yet */ }
                     await supabase.from('player_ranks').upsert(rankData, { onConflict: 'puuid' });
                 } catch (e) { console.warn('Rangs ignorés:', e.message); }
             })(),
@@ -163,8 +183,28 @@ app.get('/import', async (req, res) => {
             if (e.queueType === 'RANKED_SOLO_5x5')
                 rankData = { ...rankData, solo_tier: e.tier, solo_rank: e.rank, solo_lp: e.leaguePoints, solo_wins: e.wins, solo_losses: e.losses };
             if (e.queueType === 'RANKED_FLEX_SR')
-                rankData = { ...rankData, flex_tier: e.tier, flex_rank: e.rank, flex_lp: e.leaguePoints };
+                rankData = { ...rankData, flex_tier: e.tier, flex_rank: e.rank, flex_lp: e.leaguePoints, flex_wins: e.wins, flex_losses: e.losses };
         });
+        // Snapshot historique de rang
+        try {
+            const { data: prev } = await supabase.from('player_ranks')
+                .select('rank_history').eq('puuid', puuid).maybeSingle();
+            const history = prev?.rank_history || [];
+            const today = new Date().toISOString().split('T')[0];
+            const last = history[history.length - 1];
+            const changed = !last
+                || last.solo_tier !== (rankData.solo_tier || null)
+                || last.solo_rank !== (rankData.solo_rank || null)
+                || last.flex_tier !== (rankData.flex_tier || null);
+            if (!last || last.date !== today || changed) {
+                history.push({
+                    date: today,
+                    solo_tier: rankData.solo_tier || null, solo_rank: rankData.solo_rank || null, solo_lp: rankData.solo_lp ?? null,
+                    flex_tier: rankData.flex_tier || null, flex_rank: rankData.flex_rank || null, flex_lp: rankData.flex_lp ?? null,
+                });
+                rankData.rank_history = history.slice(-30);
+            }
+        } catch { /* rank_history column may not exist yet */ }
         await supabase.from('player_ranks').upsert(rankData, { onConflict: 'puuid' });
 
         // Batch check existants

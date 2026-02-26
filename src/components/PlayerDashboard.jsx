@@ -536,10 +536,31 @@ function TopItems({ history }) {
 
 // ─── MAIN DASHBOARD ───────────────────────────────────────
 
+const TIER_SHORT_DB = {
+    IRON: 'Fer', BRONZE: 'Bronze', SILVER: 'Argent', GOLD: 'Or',
+    PLATINUM: 'Platine', EMERALD: 'Émeraude', DIAMOND: 'Diamant',
+    MASTER: 'Maître', GRANDMASTER: 'Grand Maître', CHALLENGER: 'Challenger',
+};
+const TIER_COLOR_DB = {
+    IRON: '#9e9e9e', BRONZE: '#cd7f32', SILVER: '#a8b0b8', GOLD: '#f0a500',
+    PLATINUM: '#00e0d0', EMERALD: '#4ade80', DIAMOND: '#4fc3f7',
+    MASTER: '#9b59b6', GRANDMASTER: '#e74c3c', CHALLENGER: '#f1c40f',
+};
+const DB_EMBLEM_CDN = 'https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/ranked-emblem/';
+function dbEmblemUrl(tier) { return tier ? `${DB_EMBLEM_CDN}emblem-${tier.toLowerCase()}.png` : null; }
+function dbRankLabel(tier, rank) {
+    if (!tier) return 'Non classé';
+    const t = TIER_SHORT_DB[tier] || tier;
+    if (['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(tier)) return t;
+    return `${t} ${rank || ''}`;
+}
+
 export default function PlayerDashboard({ data, pid, onClose, inline = false }) {
     const isP2     = pid === 'p2';
     const color    = isP2 ? '#e84d00' : '#f0a500';
     const cssColor = isP2 ? 'var(--p2)' : 'var(--p1)';
+
+    const [dbQueue, setDbQueue] = useState('solo');
 
     const { rank: r, global: g, history: h, rawTag } = data;
     const name    = (r.riot_id || rawTag || '').split('#')[0];
@@ -631,11 +652,32 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false }) 
                         <img className="db-avatar"
                             src={`https://ddragon.leagueoflegends.com/cdn/${D_VER}/img/profileicon/${r.profile_icon_id || 29}.png`}
                             onError={e => { e.target.style.opacity = '.3'; }} alt="" />
-                        <div style={{ flex: 1 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
                             <div className="db-name" style={{ color: cssColor }}>{name}</div>
-                            <div className="db-rank-sub">
-                                {rankTxt}
-                                {r.flex_tier ? <span style={{ marginLeft: 12, opacity: 0.65 }}>Flex: {r.flex_tier} {r.flex_rank || ''} · {r.flex_lp ?? '?'} LP</span> : null}
+                            {/* Solo/Flex toggle */}
+                            <div className="db-rank-row">
+                                <div className="db-queue-tabs">
+                                    <button className={`db-qtab ${dbQueue === 'solo' ? 'active' : ''}`} onClick={() => setDbQueue('solo')}>Solo</button>
+                                    <button className={`db-qtab ${dbQueue === 'flex' ? 'active' : ''}`} onClick={() => setDbQueue('flex')}>Flex</button>
+                                </div>
+                                {(() => {
+                                    const dTier = dbQueue === 'solo' ? r.solo_tier : r.flex_tier;
+                                    const dRank = dbQueue === 'solo' ? r.solo_rank : r.flex_rank;
+                                    const dLp   = dbQueue === 'solo' ? r.solo_lp   : r.flex_lp;
+                                    const dUrl  = dbEmblemUrl(dTier);
+                                    const dCol  = TIER_COLOR_DB[dTier] || 'var(--text-dim)';
+                                    return (
+                                        <div className="db-rank-display">
+                                            {dUrl && <img className="db-rank-emblem" src={dUrl} alt={dTier || ''} onError={e => { e.target.style.display = 'none'; }} />}
+                                            <div>
+                                                <div className="db-rank-label" style={{ color: dCol }}>{dbRankLabel(dTier, dRank)}</div>
+                                                {dTier && dLp !== null && dLp !== undefined && (
+                                                    <div className="db-rank-lp">{dLp} LP</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         </div>
                         {cons && (
