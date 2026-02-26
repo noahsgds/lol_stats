@@ -16,6 +16,7 @@ export default function App() {
     const [p2Input, setP2Input] = useState('SannSawako#9403');
     const [queue, setQueue] = useState('');
     const [loading, setLoading] = useState(false);
+    const [syncMsg, setSyncMsg] = useState(null);
     const [playersData, setPlayersData] = useState({ p1: null, p2: null });
     const [toast, setToast] = useState(null);
     const [dashPid, setDashPid] = useState(null);
@@ -35,14 +36,9 @@ export default function App() {
         }
         setLoading(true);
         setPlayersData({ p1: null, p2: null });
+        setSyncMsg('Synchronisation Riot en cours…');
         try {
-            // 1. Affiche immédiatement les données Supabase (cache)
-            const [d1, d2] = await Promise.all([fetchAll(p1, q), fetchAll(p2, q)]);
-            setPlayersData({ p1: { ...d1, rawTag: p1 }, p2: { ...d2, rawTag: p2 } });
-            setLoading(false);
-            showToast('⚡ Données chargées — sync Riot en cours…');
-
-            // 2. Sync en arrière-plan avec timeout 25s
+            // 1. Sync d'abord — garantit des données fraîches
             const syncOne = (tag) => {
                 const ctrl = new AbortController();
                 const t = setTimeout(() => ctrl.abort(), 60000);
@@ -53,17 +49,17 @@ export default function App() {
             };
             const [s1, s2] = await Promise.all([syncOne(p1), syncOne(p2)]);
 
-            // 3. Rafraîchit seulement si de nouveaux matchs ont été ajoutés
+            // 2. Fetch données fraîches depuis Supabase
+            setSyncMsg('Chargement des données…');
+            const [d1, d2] = await Promise.all([fetchAll(p1, q), fetchAll(p2, q)]);
+            setPlayersData({ p1: { ...d1, rawTag: p1 }, p2: { ...d2, rawTag: p2 } });
+
             const newCount = (s1.added || 0) + (s2.added || 0);
-            if (newCount > 0) {
-                showToast(`✅ ${newCount} nouveau(x) match(s) — mise à jour…`);
-                const [nd1, nd2] = await Promise.all([fetchAll(p1, q), fetchAll(p2, q)]);
-                setPlayersData({ p1: { ...nd1, rawTag: p1 }, p2: { ...nd2, rawTag: p2 } });
-            } else {
-                showToast('✅ Données à jour');
-            }
+            showToast(newCount > 0 ? `✅ ${newCount} nouveau(x) match(s) ajouté(s)` : '✅ Données à jour');
         } catch (e) {
             console.error(e);
+        } finally {
+            setSyncMsg(null);
             setLoading(false);
         }
     }, [p1Input, p2Input, queue, showToast]);
@@ -81,6 +77,12 @@ export default function App() {
                     queue={queue} setQueue={setQueue}
                     loading={loading} onAnalyze={analyze}
                 />
+                {loading && syncMsg && (
+                    <div className="sync-banner">
+                        <div className="sync-spinner" />
+                        {syncMsg}
+                    </div>
+                )}
                 <div className="bento">
                     {/* J1 */}
                     <div className="col">
