@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <radialGradient id="bg_bronze" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#cd7f32" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#cd7f32" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow_bronze">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- Background glow -->
+  <circle cx="60" cy="60" r="56" fill="url(#bg_bronze)"/>
+  <!-- Outer ring -->
+  <circle cx="60" cy="60" r="52" fill="none" stroke="#cd7f32" stroke-width="1.5" opacity="0.5"/>
+  <!-- Wing left -->
+  <path d="M60,30 C35,35 20,55 30,75 L45,65 C38,50 42,38 60,35 Z" fill="#cd7f32" opacity="0.45"/>
+  <!-- Wing right -->
+  <path d="M60,30 C85,35 100,55 90,75 L75,65 C82,50 78,38 60,35 Z" fill="#cd7f32" opacity="0.45"/>
+  <!-- Center shield -->
+  <path d="M60,28 L78,38 L78,62 L60,75 L42,62 L42,38 Z" fill="#cd7f32" opacity="0.15" filter="url(#glow_bronze)"/>
+  <path d="M60,28 L78,38 L78,62 L60,75 L42,62 L42,38 Z" fill="none" stroke="#cd7f32" stroke-width="2" filter="url(#glow_bronze)"/>
+  <!-- Tier letter -->
+  <text x="60" y="59" text-anchor="middle" dominant-baseline="middle"
+        font-size="20" font-weight="900" fill="#cd7f32" font-family="'Arial Black',Arial,sans-serif"
+        filter="url(#glow_bronze)">B</text>
+  <!-- Bottom accent -->
+  <line x1="44" y1="82" x2="76" y2="82" stroke="#cd7f32" stroke-width="1.5" opacity="0.6"/>
+  <circle cx="60" cy="86" r="2.5" fill="#cd7f32" opacity="0.6"/>
+</svg>

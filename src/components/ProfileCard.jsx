@@ -13,9 +13,16 @@ const TIER_COLOR = {
     PLATINUM: '#00e0d0', EMERALD: '#4ade80', DIAMOND: '#4fc3f7',
     MASTER: '#9b59b6', GRANDMASTER: '#e74c3c', CHALLENGER: '#f1c40f',
 };
-// Local images (public/ranks/) take priority; CDN fallback if not uploaded yet
-const emblemUrl = tier => tier ? `/ranks/${tier.toLowerCase()}.png` : null;
-const emblemFallback = tier => tier ? `https://opgg-static.akamaized.net/images/medals_new/${tier.toLowerCase()}.png` : null;
+// Priority: /ranks/{tier}.png (custom) → /ranks/{tier}.svg (placeholder) → op.gg CDN
+const emblemPng = tier => tier ? `/ranks/${tier.toLowerCase()}.png` : null;
+const emblemSvg = tier => tier ? `/ranks/${tier.toLowerCase()}.svg` : null;
+const emblemCDN = tier => tier ? `https://opgg-static.akamaized.net/images/medals_new/${tier.toLowerCase()}.png` : null;
+const emblemUrl = emblemPng;
+function emblemFallbackChain(tier, tried) {
+    if (tried === 'png') return emblemSvg(tier);
+    if (tried === 'svg') return emblemCDN(tier);
+    return null;
+}
 
 function rankLabel(tier, rank) {
     if (!tier) return 'Non classé';
@@ -124,8 +131,9 @@ export default function ProfileCard({ data, isP2, onDashboard }) {
                                     src={eUrl}
                                     alt={curTier || ''}
                                     onError={e => {
-                                        const fb = emblemFallback(curTier);
-                                        if (fb && e.target.src !== fb) { e.target.src = fb; }
+                                        const tried = e.target.dataset.tried || 'png';
+                                        const next = emblemFallbackChain(curTier, tried);
+                                        if (next) { e.target.dataset.tried = tried === 'png' ? 'svg' : 'cdn'; e.target.src = next; }
                                         else { e.target.style.opacity = '.15'; }
                                     }}
                                 />
@@ -166,8 +174,9 @@ export default function ProfileCard({ data, isP2, onDashboard }) {
                                             {sUrl ? (
                                                 <img className="pc-history-emblem" src={sUrl} alt=""
                                                     onError={e => {
-                                                        const fb = emblemFallback(sTier);
-                                                        if (fb && e.target.src !== fb) { e.target.src = fb; }
+                                                        const tried = e.target.dataset.tried || 'png';
+                                                        const next = emblemFallbackChain(sTier, tried);
+                                                        if (next) { e.target.dataset.tried = tried === 'png' ? 'svg' : 'cdn'; e.target.src = next; }
                                                         else { e.target.style.opacity = '.2'; }
                                                     }} />
                                             ) : (

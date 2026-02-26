@@ -547,7 +547,11 @@ const TIER_COLOR_DB = {
     MASTER: '#9b59b6', GRANDMASTER: '#e74c3c', CHALLENGER: '#f1c40f',
 };
 function dbEmblemUrl(tier) { return tier ? `/ranks/${tier.toLowerCase()}.png` : null; }
-function dbEmblemFallback(tier) { return tier ? `https://opgg-static.akamaized.net/images/medals_new/${tier.toLowerCase()}.png` : null; }
+function dbEmblemFallbackChain(tier, tried) {
+    if (tried === 'png') return tier ? `/ranks/${tier.toLowerCase()}.svg` : null;
+    if (tried === 'svg') return tier ? `https://opgg-static.akamaized.net/images/medals_new/${tier.toLowerCase()}.png` : null;
+    return null;
+}
 function dbRankLabel(tier, rank) {
     if (!tier) return 'Non classé';
     const t = TIER_SHORT_DB[tier] || tier;
@@ -670,8 +674,9 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false }) 
                                         <div className="db-rank-display">
                                             {dUrl && <img className="db-rank-emblem" src={dUrl} alt={dTier || ''}
     onError={e => {
-        const fb = dbEmblemFallback(dTier);
-        if (fb && e.target.src !== fb) { e.target.src = fb; }
+        const tried = e.target.dataset.tried || 'png';
+        const next = dbEmblemFallbackChain(dTier, tried);
+        if (next) { e.target.dataset.tried = tried === 'png' ? 'svg' : 'cdn'; e.target.src = next; }
         else { e.target.style.display = 'none'; }
     }} />}
                                             <div>
