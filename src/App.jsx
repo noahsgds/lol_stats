@@ -12,6 +12,7 @@ import H2HSection from './components/H2HSection.jsx';
 import PlayerDashboard from './components/PlayerDashboard.jsx';
 import TournamentTab from './components/TournamentTab.jsx';
 import ReportTab from './components/ReportTab.jsx';
+import LiveBanner from './components/LiveBanner.jsx';
 
 export default function App() {
     const [p1Input, setP1Input] = useState('PH Ha0n#0617');
@@ -142,6 +143,11 @@ export default function App() {
                     onAnalyze={mode === 'compare' ? analyze : analyzeSolo}
                     mode={mode} setMode={setMode}
                 />
+
+                {/* ── Live banner (affiché si le joueur est en game) ── */}
+                {soloData?.rawTag && <LiveBanner riotId={soloData.rawTag} />}
+                {p1?.rawTag && mode === 'compare' && <LiveBanner riotId={p1.rawTag} />}
+                {p2?.rawTag && mode === 'compare' && <LiveBanner riotId={p2.rawTag} />}
 
                 {/* ── Analyse individuelle ── */}
                 {mode === 'solo' && (

@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { Line } from 'react-chartjs-2';
 import { D_VER, toFixed, toWR, fmtK, getChampKey, computeChampStats, getQ, API_BASE, timeAgo } from '../lib/utils.js';
-import { getChampIdMap, champIconUrl, getQueueLabel } from '../lib/ddragon.js';
 import MatchDetailModal from './MatchDetail.jsx';
 
 // ─── CONSTANTS ────────────────────────────────────────────
@@ -110,110 +109,6 @@ function perfGrade(m) {
     return { label: 'D', color: '#f87171' };
 }
 
-// ─── LIVE GAME ────────────────────────────────────────────
-
-function useLiveGame(summonerId, riotId) {
-    const [liveData, setLiveData] = useState(null);
-    const [liveError, setLiveError] = useState(null);
-    const [champMap, setChampMap] = useState(null);
-
-    const fetchLive = useCallback(async () => {
-        try {
-            const param = summonerId
-                ? `summonerId=${encodeURIComponent(summonerId)}`
-                : `riotId=${encodeURIComponent(riotId)}`;
-            const res = await fetch(`${API_BASE}/live?${param}`);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data = await res.json();
-            setLiveData(data.inGame ? data : false);
-        } catch (e) { setLiveError(e.message); setLiveData(false); }
-    }, [summonerId, riotId]);
-
-    useEffect(() => {
-        getChampIdMap().then(setChampMap).catch(() => {});
-        fetchLive();
-        const id = setInterval(fetchLive, 30_000);
-        return () => clearInterval(id);
-    }, [fetchLive]);
-
-    return { liveData, liveError, champMap };
-}
-
-function LiveTicker({ initialLength }) {
-    const [elapsed, setElapsed] = useState(initialLength);
-    useEffect(() => {
-        const base = Date.now() - initialLength * 1000;
-        const t = setInterval(() => setElapsed(Math.floor((Date.now() - base) / 1000)), 1000);
-        return () => clearInterval(t);
-    }, [initialLength]);
-    return <span>{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}</span>;
-}
-
-function LiveGameSection({ summonerId, riotId, cssColor }) {
-    const { liveData, liveError, champMap } = useLiveGame(summonerId, riotId);
-    const champImg = id => {
-        const key = champMap?.[id];
-        return key ? champIconUrl(key) : `https://ddragon.leagueoflegends.com/cdn/${D_VER}/img/profileicon/29.png`;
-    };
-
-    if (liveData === null) return (
-        <Section title="Partie en cours" accent="var(--border-hi)">
-            <span style={{ color: 'var(--text-dim)', fontSize: '12px' }}>Vérification…</span>
-        </Section>
-    );
-
-    if (!liveData) return (
-        <Section title="Partie en cours" accent="var(--border-hi)">
-            <span style={{ color: 'var(--text-dim)', fontSize: '12px', fontFamily: "'JetBrains Mono',monospace" }}>
-                {liveError ? `Erreur : ${liveError}` : '⬤  Hors jeu'}
-            </span>
-        </Section>
-    );
-
-    const team1 = liveData.participants?.filter(p => p.teamId === 100) || [];
-    const team2 = liveData.participants?.filter(p => p.teamId === 200) || [];
-    const bans1 = liveData.bannedChampions?.filter(b => b.teamId === 100) || [];
-    const bans2 = liveData.bannedChampions?.filter(b => b.teamId === 200) || [];
-
-    return (
-        <Section title={
-            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: 'var(--loss)', animation: 'livePulse 1.2s ease-in-out infinite' }} />
-                En partie — {getQueueLabel(liveData.gameQueueConfigId)}
-                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 400, color: 'var(--text-mid)', fontSize: '10px' }}>
-                    ⏱ <LiveTicker initialLength={liveData.gameLength || 0} />
-                </span>
-            </span>
-        } accent={cssColor}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                {[
-                    { players: team1, bans: bans1, label: 'Équipe Bleue', col: '#60a5fa' },
-                    { players: team2, bans: bans2, label: 'Équipe Rouge', col: '#f87171' },
-                ].map(team => (
-                    <div key={team.label}>
-                        <div style={{ fontSize: '9px', fontWeight: 800, color: team.col, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>{team.label}</div>
-                        {team.players.map((p, i) => (
-                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' }}>
-                                <img src={champImg(p.championId)} alt="" style={{ width: 26, height: 26, borderRadius: 4, border: '1px solid var(--border-hi)', flexShrink: 0 }} onError={e => { e.target.style.opacity = '.3'; }} />
-                                <span style={{ fontSize: '12px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text)' }}>
-                                    {p.summonerName || p.puuid?.slice(0, 10) + '…'}
-                                </span>
-                            </div>
-                        ))}
-                        {team.bans.length > 0 && (
-                            <div style={{ display: 'flex', gap: 3, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                                <span style={{ fontSize: '9px', color: 'var(--text-dim)' }}>Bans :</span>
-                                {team.bans.map((b, i) => b.championId !== -1 && (
-                                    <img key={i} src={champImg(b.championId)} alt="" style={{ width: 16, height: 16, borderRadius: 3, opacity: 0.5, filter: 'grayscale(1)' }} />
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                ))}
-            </div>
-        </Section>
-    );
-}
 
 // ─── SECTION WRAPPER ──────────────────────────────────────
 
@@ -868,8 +763,6 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false }) 
                     {/* ── TOP ITEMS ── */}
                     <TopItems history={h} />
 
-                    {/* ── LIVE GAME ── */}
-                    <LiveGameSection summonerId={r.summoner_id} riotId={rawTag} cssColor={cssColor} />
 
                 </div>
             </div>

@@ -195,7 +195,7 @@ app.get('/import', async (req, res) => {
     }
 });
 
-// ─── LIVE GAME (PUUID direct, pas de summoner lookup) ─────
+// ─── LIVE GAME (résout les PUUIDs → vrais noms + rangs) ───
 app.get('/live', async (req, res) => {
     try {
         const { riotId, puuid: directPuuid } = req.query;
@@ -211,9 +211,40 @@ app.get('/live', async (req, res) => {
         }
 
         try {
-            // spectator-v5 accepte le PUUID directement
             const { data: live } = await getRiot(`${PLATFORM_HOST}/lol/spectator/v5/active-games/by-summoner/${puuid}`);
-            res.json({ inGame: true, ...live });
+
+            // Résoudre chaque participant PUUID → gameName#tagLine + rang solo
+            const participants = live.participants || [];
+            const enriched = [];
+            for (let i = 0; i < participants.length; i += 5) {
+                const batch = participants.slice(i, i + 5);
+                const results = await Promise.all(batch.map(async p => {
+                    try {
+                        const [accRes, leagueRes] = await Promise.all([
+                            getRiot(`${REGION_HOST}/riot/account/v1/accounts/by-puuid/${p.puuid}`),
+                            getRiot(`${PLATFORM_HOST}/lol/league/v4/entries/by-puuid/${p.puuid}`),
+                        ]);
+                        const acc = accRes.data;
+                        const solo = (leagueRes.data || []).find(e => e.queueType === 'RANKED_SOLO_5x5');
+                        return {
+                            ...p,
+                            gameName: acc.gameName,
+                            tagLine: acc.tagLine,
+                            soloTier: solo?.tier || null,
+                            soloRank: solo?.rank || null,
+                            soloLp: solo?.leaguePoints ?? null,
+                            soloWins: solo?.wins ?? 0,
+                            soloLosses: solo?.losses ?? 0,
+                        };
+                    } catch {
+                        return { ...p, gameName: p.summonerName || null, tagLine: null, soloTier: null, soloRank: null, soloLp: null };
+                    }
+                }));
+                enriched.push(...results);
+                if (i + 5 < participants.length) await sleep(200);
+            }
+
+            res.json({ inGame: true, ...live, participants: enriched });
         } catch (e) {
             if (e.response?.status === 404) res.json({ inGame: false });
             else throw e;
