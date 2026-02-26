@@ -10,6 +10,7 @@ const app = express();
 app.use(cors({
     origin: [/https:\/\/.*\.github\.io$/, /http:\/\/localhost(:\d+)?$/]
 }));
+app.use(express.json());
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
@@ -238,5 +239,50 @@ app.get('/ladder', async (req, res) => {
 });
 
 app.get('/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+
+// ─── TOURNAMENT ───────────────────────────────────────────
+const postRiot = async (url, body) => {
+    return await axios.post(url, body, {
+        headers: { 'X-Riot-Token': RIOT_API_KEY, 'Content-Type': 'application/json' },
+    });
+};
+
+// POST /tournament/codes  — crée provider + tournoi + codes pour un match
+app.post('/tournament/codes', async (req, res) => {
+    try {
+        const { label = 'Match', format = 'BO1' } = req.body || {};
+        const gpp = format === 'BO5' ? 5 : format === 'BO3' ? 3 : 1;
+
+        // 1. Enregistrer le provider
+        const { data: providerId } = await postRiot(
+            `${PLATFORM_HOST}/lol/tournament-stub/v5/providers`,
+            { region: 'EUW', url: 'https://lol-stats-svlz.onrender.com/tournament/callback' }
+        );
+
+        // 2. Créer le tournoi
+        const { data: tournamentId } = await postRiot(
+            `${PLATFORM_HOST}/lol/tournament-stub/v5/tournaments`,
+            { name: label, providerId }
+        );
+
+        // 3. Générer les codes
+        const { data: codes } = await postRiot(
+            `${PLATFORM_HOST}/lol/tournament-stub/v5/codes?count=${gpp}&tournamentId=${tournamentId}`,
+            { mapType: 'SUMMONERS_RIFT', pickType: 'TOURNAMENT_DRAFT', spectatorType: 'ALL', teamSize: 5 }
+        );
+
+        console.log(`🏆 Codes tournoi générés pour "${label}" (${format}) — ${codes.length} code(s)`);
+        res.json({ ok: true, codes });
+    } catch (err) {
+        console.error('Tournament codes error:', err.response?.data || err.message);
+        res.status(500).json({ error: err.response?.data?.message || err.message });
+    }
+});
+
+// Callback Riot (réception des résultats de match)
+app.post('/tournament/callback', (req, res) => {
+    console.log('🏆 Tournament callback reçu:', JSON.stringify(req.body));
+    res.json({ ok: true });
+});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Serveur prêt → http://localhost:${PORT}`));

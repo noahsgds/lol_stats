@@ -1,4 +1,6 @@
 export default function TopBar({ p1Input, setP1Input, p2Input, setP2Input, soloInput, setSoloInput, queue, setQueue, loading, onAnalyze, mode, setMode }) {
+    const showSearch = mode === 'compare' || mode === 'solo';
+
     const queueSelect = (
         <div className="queue-wrap">
             <select value={queue} onChange={e => setQueue(e.target.value)}>
@@ -25,32 +27,44 @@ export default function TopBar({ p1Input, setP1Input, p2Input, setP2Input, soloI
 
             <div className="topbar-right">
                 <div className="mode-tabs">
-                    <button className={`mode-tab ${mode === 'compare' ? 'active' : ''}`} onClick={() => setMode('compare')}>⚔ Comparatif</button>
-                    <button className={`mode-tab ${mode === 'stats' ? 'active' : ''}`} onClick={() => setMode('stats')}>📊 Stats</button>
-                </div>
-
-                <div className="search-row">
-                    {mode === 'compare' ? (<>
-                        <div className="input-group">
-                            <div className="dot dot-p1" />
-                            <input type="text" value={p1Input} onChange={e => setP1Input(e.target.value)} onKeyDown={e => e.key === 'Enter' && onAnalyze()} placeholder="Joueur 1#TAG" />
-                        </div>
-                        <div className="vs-block">VS</div>
-                        <div className="input-group">
-                            <div className="dot dot-p2" />
-                            <input type="text" value={p2Input} onChange={e => setP2Input(e.target.value)} onKeyDown={e => e.key === 'Enter' && onAnalyze()} placeholder="Joueur 2#TAG" />
-                        </div>
-                    </>) : (
-                        <div className="input-group" style={{ flex: 1 }}>
-                            <div className="dot dot-p1" />
-                            <input type="text" value={soloInput} onChange={e => setSoloInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && onAnalyze()} placeholder="Joueur#TAG" autoFocus />
-                        </div>
-                    )}
-                    {queueSelect}
-                    <button className="btn-go" disabled={loading} onClick={onAnalyze}>
-                        {loading ? '⏳' : 'Analyser →'}
+                    <button className={`mode-tab ${mode === 'solo' ? 'active' : ''}`} onClick={() => setMode('solo')}>
+                        📊 Analyse individuelle
+                    </button>
+                    <button className={`mode-tab ${mode === 'compare' ? 'active' : ''}`} onClick={() => setMode('compare')}>
+                        ⚔ Comparatif
+                    </button>
+                    <button className={`mode-tab ${mode === 'tournament' ? 'active' : ''}`} onClick={() => setMode('tournament')}>
+                        🏆 Tournois
+                    </button>
+                    <button className={`mode-tab ${mode === 'report' ? 'active' : ''}`} onClick={() => setMode('report')}>
+                        📋 Rapport
                     </button>
                 </div>
+
+                {showSearch && (
+                    <div className="search-row">
+                        {mode === 'compare' ? (<>
+                            <div className="input-group">
+                                <div className="dot dot-p1" />
+                                <input type="text" value={p1Input} onChange={e => setP1Input(e.target.value)} onKeyDown={e => e.key === 'Enter' && onAnalyze()} placeholder="Joueur 1#TAG" />
+                            </div>
+                            <div className="vs-block">VS</div>
+                            <div className="input-group">
+                                <div className="dot dot-p2" />
+                                <input type="text" value={p2Input} onChange={e => setP2Input(e.target.value)} onKeyDown={e => e.key === 'Enter' && onAnalyze()} placeholder="Joueur 2#TAG" />
+                            </div>
+                        </>) : (
+                            <div className="input-group" style={{ flex: 1 }}>
+                                <div className="dot dot-p1" />
+                                <input type="text" value={soloInput} onChange={e => setSoloInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && onAnalyze()} placeholder="Joueur#TAG" autoFocus />
+                            </div>
+                        )}
+                        {queueSelect}
+                        <button className="btn-go" disabled={loading} onClick={onAnalyze}>
+                            {loading ? '⏳' : 'Analyser →'}
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

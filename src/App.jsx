@@ -10,6 +10,8 @@ import CombatSection from './components/CombatSection.jsx';
 import InsightsSection from './components/InsightsSection.jsx';
 import H2HSection from './components/H2HSection.jsx';
 import PlayerDashboard from './components/PlayerDashboard.jsx';
+import TournamentTab from './components/TournamentTab.jsx';
+import ReportTab from './components/ReportTab.jsx';
 
 export default function App() {
     const [p1Input, setP1Input] = useState('PH Ha0n#0617');
@@ -140,67 +142,76 @@ export default function App() {
                     onAnalyze={mode === 'compare' ? analyze : analyzeSolo}
                     mode={mode} setMode={setMode}
                 />
-                {mode === 'compare' ? (
-                loading ? (
-                    <div className="sync-banner">
-                        <div className="sync-spinner" />
-                        {syncMsg || 'Chargement…'}
-                    </div>
-                ) : (p1 && p2) ? (
-                <div className="bento">
-                    {/* J1 */}
-                    <div className="col">
-                        <div className="card">
-                            <ProfileCard data={p1} isP2={false} onDashboard={() => setDashPid('p1')} />
-                            <div className="card-head"><div className="ch-bar ch-p1" />Historique récent</div>
-                            <MatchHistory history={p1?.history} loading={false} />
-                        </div>
-                    </div>
 
-                    {/* CENTER */}
-                    <div className="col">
-                        <div className="card">
-                            <div className="card-head"><div className="ch-bar ch-gold" />Profil Radar</div>
-                            <RadarChartPanel g1={p1?.global} g2={p2?.global} />
+                {/* ── Analyse individuelle ── */}
+                {mode === 'solo' && (
+                    soloLoading ? (
+                        <div className="sync-banner">
+                            <div className="sync-spinner" />
+                            {soloSyncMsg || 'Chargement…'}
                         </div>
-                        <div className="card">
-                            <div className="card-head"><div className="ch-bar ch-gold" />Forme récente — 10 derniers matchs</div>
-                            <TrendChartPanel h1={p1?.history} h2={p2?.history} />
-                        </div>
-                        <div className="card">
-                            <div className="card-head"><div className="ch-bar ch-gold" />Combat &amp; Impact</div>
-                            <CombatSection g1={p1?.global} g2={p2?.global} />
-                        </div>
-                        <div className="card">
-                            <div className="card-head"><div className="ch-bar ch-gold" />Insights Qualitatifs</div>
-                            <InsightsSection g1={p1?.global} g2={p2?.global} h1={p1?.history} h2={p2?.history} tag1={p1?.rawTag} tag2={p2?.rawTag} />
-                        </div>
-                        <div className="card">
-                            <div className="card-head"><div className="ch-bar ch-gold" />Face-à-Face</div>
-                            <H2HSection g1={p1?.global} g2={p2?.global} tag1={p1?.rawTag} tag2={p2?.rawTag} />
-                        </div>
-                    </div>
+                    ) : soloData ? (
+                        <PlayerDashboard data={soloData} pid="p1" onClose={() => setSoloData(null)} inline />
+                    ) : <Empty />
+                )}
 
-                    {/* J2 */}
-                    <div className="col">
-                        <div className="card">
-                            <ProfileCard data={p2} isP2={true} onDashboard={() => setDashPid('p2')} />
-                            <div className="card-head"><div className="ch-bar ch-p2" />Historique récent</div>
-                            <MatchHistory history={p2?.history} loading={false} />
+                {/* ── Comparatif ── */}
+                {mode === 'compare' && (
+                    loading ? (
+                        <div className="sync-banner">
+                            <div className="sync-spinner" />
+                            {syncMsg || 'Chargement…'}
                         </div>
-                    </div>
-                </div>
-                ) : <Empty />
-            ) : (
-                soloLoading ? (
-                    <div className="sync-banner">
-                        <div className="sync-spinner" />
-                        {soloSyncMsg || 'Chargement…'}
-                    </div>
-                ) : soloData ? (
-                    <PlayerDashboard data={soloData} pid="p1" onClose={() => setSoloData(null)} inline />
-                ) : <Empty />
-            )}
+                    ) : (p1 && p2) ? (
+                        <div className="bento">
+                            {/* J1 */}
+                            <div className="col">
+                                <div className="card">
+                                    <ProfileCard data={p1} isP2={false} onDashboard={() => setDashPid('p1')} />
+                                    <div className="card-head"><div className="ch-bar ch-p1" />Historique récent</div>
+                                    <MatchHistory history={p1?.history} loading={false} />
+                                </div>
+                            </div>
+                            {/* CENTER */}
+                            <div className="col">
+                                <div className="card">
+                                    <div className="card-head"><div className="ch-bar ch-gold" />Profil Radar</div>
+                                    <RadarChartPanel g1={p1?.global} g2={p2?.global} />
+                                </div>
+                                <div className="card">
+                                    <div className="card-head"><div className="ch-bar ch-gold" />Forme récente — 10 derniers matchs</div>
+                                    <TrendChartPanel h1={p1?.history} h2={p2?.history} />
+                                </div>
+                                <div className="card">
+                                    <div className="card-head"><div className="ch-bar ch-gold" />Combat &amp; Impact</div>
+                                    <CombatSection g1={p1?.global} g2={p2?.global} />
+                                </div>
+                                <div className="card">
+                                    <div className="card-head"><div className="ch-bar ch-gold" />Insights Qualitatifs</div>
+                                    <InsightsSection g1={p1?.global} g2={p2?.global} h1={p1?.history} h2={p2?.history} tag1={p1?.rawTag} tag2={p2?.rawTag} />
+                                </div>
+                                <div className="card">
+                                    <div className="card-head"><div className="ch-bar ch-gold" />Face-à-Face</div>
+                                    <H2HSection g1={p1?.global} g2={p2?.global} tag1={p1?.rawTag} tag2={p2?.rawTag} />
+                                </div>
+                            </div>
+                            {/* J2 */}
+                            <div className="col">
+                                <div className="card">
+                                    <ProfileCard data={p2} isP2={true} onDashboard={() => setDashPid('p2')} />
+                                    <div className="card-head"><div className="ch-bar ch-p2" />Historique récent</div>
+                                    <MatchHistory history={p2?.history} loading={false} />
+                                </div>
+                            </div>
+                        </div>
+                    ) : <Empty />
+                )}
+
+                {/* ── Tournois ── */}
+                {mode === 'tournament' && <TournamentTab />}
+
+                {/* ── Rapport ── */}
+                {mode === 'report' && <ReportTab soloData={soloData} />}
             </div>
 
             {dashPid && (
