@@ -45,8 +45,8 @@ export default function App() {
             // 2. Sync en arrière-plan avec timeout 25s
             const syncOne = (tag) => {
                 const ctrl = new AbortController();
-                const t = setTimeout(() => ctrl.abort(), 25000);
-                return fetch(`${API_BASE}/sync?riotId=${encodeURIComponent(tag)}`, { signal: ctrl.signal })
+                const t = setTimeout(() => ctrl.abort(), 60000);
+                return fetch(`${API_BASE}/sync?riotId=${encodeURIComponent(tag)}&_t=${Date.now()}`, { signal: ctrl.signal })
                     .then(r => r.json())
                     .catch(() => ({ added: 0 }))
                     .finally(() => clearTimeout(t));
