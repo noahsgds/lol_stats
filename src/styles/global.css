@@ -598,7 +598,7 @@ select option { background: #1a1610; }
 
 .sync-banner {
     display: flex; align-items: center; justify-content: center; gap: 10px;
-    padding: 14px 0; color: var(--text-mid); font-size: 13px; font-weight: 600;
+    min-height: 340px; color: var(--text-mid); font-size: 13px; font-weight: 600;
     letter-spacing: 0.4px;
 }
 .sync-spinner {

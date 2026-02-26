@@ -77,24 +77,19 @@ export default function App() {
                     queue={queue} setQueue={setQueue}
                     loading={loading} onAnalyze={analyze}
                 />
-                {loading && syncMsg && (
+                {loading ? (
                     <div className="sync-banner">
                         <div className="sync-spinner" />
-                        {syncMsg}
+                        {syncMsg || 'Chargement…'}
                     </div>
-                )}
+                ) : (p1 && p2) ? (
                 <div className="bento">
                     {/* J1 */}
                     <div className="col">
                         <div className="card">
-                            {loading && !p1
-                                ? <Skeleton />
-                                : p1
-                                    ? <ProfileCard data={p1} isP2={false} onDashboard={() => setDashPid('p1')} />
-                                    : <Empty />
-                            }
+                            <ProfileCard data={p1} isP2={false} onDashboard={() => setDashPid('p1')} />
                             <div className="card-head"><div className="ch-bar ch-p1" />Historique récent</div>
-                            <MatchHistory history={p1?.history} loading={loading && !p1} />
+                            <MatchHistory history={p1?.history} loading={false} />
                         </div>
                     </div>
 
@@ -125,17 +120,13 @@ export default function App() {
                     {/* J2 */}
                     <div className="col">
                         <div className="card">
-                            {loading && !p2
-                                ? <Skeleton />
-                                : p2
-                                    ? <ProfileCard data={p2} isP2={true} onDashboard={() => setDashPid('p2')} />
-                                    : <Empty />
-                            }
+                            <ProfileCard data={p2} isP2={true} onDashboard={() => setDashPid('p2')} />
                             <div className="card-head"><div className="ch-bar ch-p2" />Historique récent</div>
-                            <MatchHistory history={p2?.history} loading={loading && !p2} />
+                            <MatchHistory history={p2?.history} loading={false} />
                         </div>
                     </div>
                 </div>
+                ) : <Empty />}
             </div>
 
             {dashPid && (
