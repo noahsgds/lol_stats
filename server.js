@@ -284,5 +284,23 @@ app.post('/tournament/callback', (req, res) => {
     console.log('🏆 Tournament callback reçu:', JSON.stringify(req.body));
     res.json({ ok: true });
 });
+
+// ─── MATCH DETAIL ─────────────────────────────────────────
+// Retourne le JSON complet Riot pour un match (10 joueurs, objectifs, etc.)
+app.get('/match/:matchId', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('bronze_matches')
+            .select('match_data')
+            .eq('match_id', req.params.matchId)
+            .single();
+        if (error || !data) return res.status(404).json({ error: 'Match non trouvé en base' });
+        res.set('Cache-Control', 'public, max-age=86400'); // immuable — les matchs ne changent pas
+        res.json(data.match_data);
+    } catch (err) {
+        console.error('Match detail error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Serveur prêt → http://localhost:${PORT}`));

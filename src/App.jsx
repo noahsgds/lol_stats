@@ -169,7 +169,7 @@ export default function App() {
                                 <div className="card">
                                     <ProfileCard data={p1} isP2={false} onDashboard={() => setDashPid('p1')} />
                                     <div className="card-head"><div className="ch-bar ch-p1" />Historique récent</div>
-                                    <MatchHistory history={p1?.history} loading={false} />
+                                    <MatchHistory history={p1?.history} loading={false} trackedTag={p1?.rawTag} />
                                 </div>
                             </div>
                             {/* CENTER */}
@@ -200,7 +200,7 @@ export default function App() {
                                 <div className="card">
                                     <ProfileCard data={p2} isP2={true} onDashboard={() => setDashPid('p2')} />
                                     <div className="card-head"><div className="ch-bar ch-p2" />Historique récent</div>
-                                    <MatchHistory history={p2?.history} loading={false} />
+                                    <MatchHistory history={p2?.history} loading={false} trackedTag={p2?.rawTag} />
                                 </div>
                             </div>
                         </div>

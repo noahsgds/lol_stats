@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Line } from 'react-chartjs-2';
 import { D_VER, toFixed, toWR, fmtK, getChampKey, computeChampStats, getQ, API_BASE, timeAgo } from '../lib/utils.js';
 import { getChampIdMap, champIconUrl, getQueueLabel } from '../lib/ddragon.js';
+import MatchDetailModal from './MatchDetail.jsx';
 
 // ─── CONSTANTS ────────────────────────────────────────────
 
@@ -295,103 +296,121 @@ function WinLossSplit({ history, cssColor }) {
 
 // ─── FULL MATCH LOG ───────────────────────────────────────
 
-function MatchLog({ history }) {
+function MatchLog({ history, trackedTag }) {
     if (!history?.length) return null;
     const [expanded, setExpanded] = useState(false);
+    const [selectedMatchId, setSelectedMatchId] = useState(null);
     const shown = expanded ? history : history.slice(0, 15);
 
     return (
-        <Section title={`Historique complet — ${history.length} parties`}>
-            <div style={{ overflowX: 'auto' }}>
-                <table className="db-champ-table" style={{ minWidth: 760 }}>
-                    <thead>
-                        <tr>
-                            <th style={{ minWidth: 130 }}>Champion</th>
-                            <th>File</th>
-                            <th>Rés.</th>
-                            <th title="Grade de performance (KDA 35% + CS/min 20% + Dmg/min 30% + Vision 15%)">Perf</th>
-                            <th>K / D / A</th>
-                            <th>CS/min</th>
-                            <th>Dmg/min</th>
-                            <th>Pris/min</th>
-                            <th>Vision</th>
-                            <th>Or/min</th>
-                            <th>Durée</th>
-                            <th>Il y a</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {shown.map((m, i) => {
-                            const dur    = m.game_duration || 0;
-                            const durMin = Math.max(dur / 60, 1);
-                            const durStr = `${Math.floor(dur / 60)}:${String(dur % 60).padStart(2, '0')}`;
-                            const grade  = perfGrade(m);
-                            const cspm   = ((m.cs || 0) / durMin).toFixed(1);
-                            const dmgpm  = fmtK(Math.round((m.total_damage || 0) / durMin));
-                            const takpm  = fmtK(Math.round((m.total_damage_taken || 0) / durMin));
-                            const goldpm = Math.round((m.gold_earned || 0) / durMin);
-                            return (
-                                <tr key={i} style={{
-                                    background: m.win ? 'rgba(74,222,128,0.03)' : 'rgba(248,113,113,0.03)',
-                                    borderLeft: `2px solid ${m.win ? 'rgba(74,222,128,0.22)' : 'rgba(248,113,113,0.22)'}`,
-                                }}>
-                                    <td>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            <img
-                                                src={`https://ddragon.leagueoflegends.com/cdn/${D_VER}/img/champion/${getChampKey(m.champion_name)}.png`}
-                                                alt="" style={{ width: 26, height: 26, borderRadius: 4, border: '1px solid var(--border-hi)', flexShrink: 0 }}
-                                                onError={e => { e.target.style.opacity = '.2'; }}
-                                            />
-                                            <span className="db-champ-name" style={{ fontSize: '12px' }}>{m.champion_name}</span>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <span style={{ fontSize: '9px', background: 'var(--border)', padding: '2px 5px', borderRadius: 3, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{getQ(m.queue_id)}</span>
-                                    </td>
-                                    <td>
-                                        <span style={{
-                                            fontSize: '10px', fontWeight: 800, padding: '2px 7px', borderRadius: 3,
-                                            background: m.win ? 'rgba(74,222,128,0.12)' : 'rgba(248,113,113,0.12)',
-                                            color: m.win ? 'var(--win)' : 'var(--loss)',
-                                        }}>
-                                            {m.win ? 'V' : 'D'}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <span style={{ fontSize: '13px', fontWeight: 900, fontFamily: "'JetBrains Mono',monospace", color: grade.color }}>{grade.label}</span>
-                                    </td>
-                                    <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: '11px', whiteSpace: 'nowrap' }}>
-                                        <span style={{ color: 'var(--win)' }}>{m.kills}</span>
-                                        <span style={{ color: 'var(--text-dim)' }}>/</span>
-                                        <span style={{ color: 'var(--loss)' }}>{m.deaths}</span>
-                                        <span style={{ color: 'var(--text-dim)' }}>/</span>
-                                        <span style={{ color: 'var(--text-mid)' }}>{m.assists}</span>
-                                    </td>
-                                    <td style={{ color: 'var(--gold)', fontFamily: "'JetBrains Mono',monospace", fontSize: '11px' }}>{cspm}</td>
-                                    <td style={{ color: '#f97316', fontFamily: "'JetBrains Mono',monospace", fontSize: '11px' }}>{dmgpm}</td>
-                                    <td style={{ color: 'var(--text-mid)', fontFamily: "'JetBrains Mono',monospace", fontSize: '11px' }}>{takpm}</td>
-                                    <td style={{ color: '#a78bfa', fontFamily: "'JetBrains Mono',monospace", fontSize: '11px' }}>{m.vision_score || 0}</td>
-                                    <td style={{ color: '#fbbf24', fontFamily: "'JetBrains Mono',monospace", fontSize: '11px' }}>{goldpm}</td>
-                                    <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: '10px', color: 'var(--text-dim)' }}>{durStr}</td>
-                                    <td style={{ fontSize: '10px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{timeAgo(m.game_end_timestamp)}</td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
-            </div>
-            {history.length > 15 && (
-                <button onClick={() => setExpanded(e => !e)} style={{
-                    marginTop: 10, width: '100%', padding: '8px',
-                    background: 'transparent', border: '1px solid var(--border-hi)',
-                    color: 'var(--text-mid)', cursor: 'pointer',
-                    fontFamily: "'Barlow Condensed',sans-serif", fontSize: '12px', fontWeight: 700,
-                    borderRadius: 5, letterSpacing: '0.5px',
-                }}>
-                    {expanded ? '▲ Réduire' : `▼ Voir tout — ${history.length} parties`}
-                </button>
+        <>
+            <Section title={`Historique complet — ${history.length} parties`}>
+                <div style={{ overflowX: 'auto' }}>
+                    <table className="db-champ-table" style={{ minWidth: 760 }}>
+                        <thead>
+                            <tr>
+                                <th style={{ minWidth: 130 }}>Champion</th>
+                                <th>File</th>
+                                <th>Rés.</th>
+                                <th title="Grade de performance (KDA 35% + CS/min 20% + Dmg/min 30% + Vision 15%)">Perf</th>
+                                <th>K / D / A</th>
+                                <th>CS/min</th>
+                                <th>Dmg/min</th>
+                                <th>Pris/min</th>
+                                <th>Vision</th>
+                                <th>Or/min</th>
+                                <th>Durée</th>
+                                <th>Il y a</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {shown.map((m, i) => {
+                                const dur    = m.game_duration || 0;
+                                const durMin = Math.max(dur / 60, 1);
+                                const durStr = `${Math.floor(dur / 60)}:${String(dur % 60).padStart(2, '0')}`;
+                                const grade  = perfGrade(m);
+                                const cspm   = ((m.cs || 0) / durMin).toFixed(1);
+                                const dmgpm  = fmtK(Math.round((m.total_damage || 0) / durMin));
+                                const takpm  = fmtK(Math.round((m.total_damage_taken || 0) / durMin));
+                                const goldpm = Math.round((m.gold_earned || 0) / durMin);
+                                return (
+                                    <tr key={i}
+                                        onClick={() => m.match_id && setSelectedMatchId(m.match_id)}
+                                        style={{
+                                            background: m.win ? 'rgba(74,222,128,0.03)' : 'rgba(248,113,113,0.03)',
+                                            borderLeft: `2px solid ${m.win ? 'rgba(74,222,128,0.22)' : 'rgba(248,113,113,0.22)'}`,
+                                            cursor: m.match_id ? 'pointer' : 'default',
+                                            transition: 'background 0.12s',
+                                        }}
+                                        onMouseEnter={e => { if (m.match_id) e.currentTarget.style.background = m.win ? 'rgba(74,222,128,0.07)' : 'rgba(248,113,113,0.07)'; }}
+                                        onMouseLeave={e => { e.currentTarget.style.background = m.win ? 'rgba(74,222,128,0.03)' : 'rgba(248,113,113,0.03)'; }}
+                                    >
+                                        <td>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <img
+                                                    src={`https://ddragon.leagueoflegends.com/cdn/${D_VER}/img/champion/${getChampKey(m.champion_name)}.png`}
+                                                    alt="" style={{ width: 26, height: 26, borderRadius: 4, border: '1px solid var(--border-hi)', flexShrink: 0 }}
+                                                    onError={e => { e.target.style.opacity = '.2'; }}
+                                                />
+                                                <span className="db-champ-name" style={{ fontSize: '12px' }}>{m.champion_name}</span>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span style={{ fontSize: '9px', background: 'var(--border)', padding: '2px 5px', borderRadius: 3, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{getQ(m.queue_id)}</span>
+                                        </td>
+                                        <td>
+                                            <span style={{
+                                                fontSize: '10px', fontWeight: 800, padding: '2px 7px', borderRadius: 3,
+                                                background: m.win ? 'rgba(74,222,128,0.12)' : 'rgba(248,113,113,0.12)',
+                                                color: m.win ? 'var(--win)' : 'var(--loss)',
+                                            }}>
+                                                {m.win ? 'V' : 'D'}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span style={{ fontSize: '13px', fontWeight: 900, fontFamily: "'JetBrains Mono',monospace", color: grade.color }}>{grade.label}</span>
+                                        </td>
+                                        <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: '11px', whiteSpace: 'nowrap' }}>
+                                            <span style={{ color: 'var(--win)' }}>{m.kills}</span>
+                                            <span style={{ color: 'var(--text-dim)' }}>/</span>
+                                            <span style={{ color: 'var(--loss)' }}>{m.deaths}</span>
+                                            <span style={{ color: 'var(--text-dim)' }}>/</span>
+                                            <span style={{ color: 'var(--text-mid)' }}>{m.assists}</span>
+                                        </td>
+                                        <td style={{ color: 'var(--gold)', fontFamily: "'JetBrains Mono',monospace", fontSize: '11px' }}>{cspm}</td>
+                                        <td style={{ color: '#f97316', fontFamily: "'JetBrains Mono',monospace", fontSize: '11px' }}>{dmgpm}</td>
+                                        <td style={{ color: 'var(--text-mid)', fontFamily: "'JetBrains Mono',monospace", fontSize: '11px' }}>{takpm}</td>
+                                        <td style={{ color: '#a78bfa', fontFamily: "'JetBrains Mono',monospace", fontSize: '11px' }}>{m.vision_score || 0}</td>
+                                        <td style={{ color: '#fbbf24', fontFamily: "'JetBrains Mono',monospace", fontSize: '11px' }}>{goldpm}</td>
+                                        <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: '10px', color: 'var(--text-dim)' }}>{durStr}</td>
+                                        <td style={{ fontSize: '10px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{timeAgo(m.game_end_timestamp)}</td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+                {history.length > 15 && (
+                    <button onClick={() => setExpanded(e => !e)} style={{
+                        marginTop: 10, width: '100%', padding: '8px',
+                        background: 'transparent', border: '1px solid var(--border-hi)',
+                        color: 'var(--text-mid)', cursor: 'pointer',
+                        fontFamily: "'Barlow Condensed',sans-serif", fontSize: '12px', fontWeight: 700,
+                        borderRadius: 5, letterSpacing: '0.5px',
+                    }}>
+                        {expanded ? '▲ Réduire' : `▼ Voir tout — ${history.length} parties`}
+                    </button>
+                )}
+            </Section>
+
+            {selectedMatchId && (
+                <MatchDetailModal
+                    matchId={selectedMatchId}
+                    trackedTag={trackedTag}
+                    onClose={() => setSelectedMatchId(null)}
+                />
             )}
-        </Section>
+        </>
     );
 }
 
@@ -838,7 +857,7 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false }) 
                     </Section>
 
                     {/* ── FULL MATCH LOG ── */}
-                    <MatchLog history={h} />
+                    <MatchLog history={h} trackedTag={data?.rawTag} />
 
                     {/* ── QUEUE BREAKDOWN ── */}
                     <QueueBreakdown history={h} cssColor={cssColor} />
