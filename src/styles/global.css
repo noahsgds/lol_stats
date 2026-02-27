@@ -2153,46 +2153,22 @@ select option { background: #1a1610; }
 .mr2-item-ward { border-radius: 50%; }
 
 /* Badges */
-.mr2-badges { display: flex; flex-direction: column; gap: 2px; padding: 0 8px 0 2px; flex-shrink: 0; min-width: 42px; align-items: flex-end; }
-.mr2-chevron {
-    font-size: 8px; color: var(--text-dim);
-    margin-top: auto; line-height: 1;
-    transition: color 0.15s;
-}
-.mr2:hover .mr2-chevron { color: var(--text-mid); }
+.mr2-badges { display: flex; flex-direction: column; gap: 2px; padding: 0 8px 0 2px; flex-shrink: 0; min-width: 42px; }
 
-/* Wrap + expanded row */
-.mr2-wrap { display: flex; flex-direction: column; }
-.mr2-expand {
-    border-left: 3px solid var(--border-hi);
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 7px 12px 7px 10px;
-    gap: 10px;
-    animation: expandDown 0.18s ease both;
-}
-.mr2-expand-win  { border-left-color: rgba(74,222,128,0.4);  background: rgba(74,222,128,0.04); }
-.mr2-expand-lose { border-left-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.04); }
-@keyframes expandDown {
-    from { opacity: 0; transform: translateY(-4px); }
-    to   { opacity: 1; transform: translateY(0); }
-}
-.mr2-expand-stats { display: flex; gap: 16px; flex-wrap: wrap; }
-.mr2-expand-stat  { display: flex; flex-direction: column; gap: 1px; }
-.mr2-expand-val   { font-size: 12px; font-weight: 800; font-family: 'JetBrains Mono', monospace; color: var(--text); }
-.mr2-expand-lbl   { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
-.mr2-detail-btn {
-    flex-shrink: 0;
+/* Show more / show less */
+.mh-show-more {
+    display: block; width: 100%;
     background: transparent;
-    border: 1px solid var(--border-hi);
-    color: var(--gold);
+    border: none; border-top: 1px solid var(--border);
+    color: var(--text-dim);
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 11px; font-weight: 700;
-    padding: 4px 10px; border-radius: 5px;
-    cursor: pointer; letter-spacing: 0.5px;
-    transition: border-color 0.15s, background 0.15s;
-    white-space: nowrap;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 10px; cursor: pointer;
+    transition: color 0.15s, background 0.15s;
 }
-.mr2-detail-btn:hover { border-color: var(--gold); background: var(--gold-dim); }
+.mh-show-more:hover { color: var(--gold); background: var(--gold-dim); }
+.mh-show-less { border-top: none; border-bottom: 1px solid var(--border); }
 
 /* Responsive override pour les nouvelles classes */
 @media (max-width: 767px) {
