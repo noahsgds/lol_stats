@@ -307,6 +307,52 @@ app.get('/ladder', async (req, res) => {
 
 app.get('/ping', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
+// ─── DEBUG RANK ────────────────────────────────────────────
+// Vérifie ce qui est réellement sauvegardé dans player_ranks
+app.get('/debug-rank', async (req, res) => {
+    try {
+        const riotId = req.query.riotId;
+
+        // 1. Lire toutes les lignes de player_ranks
+        const { data: allRows, error: allErr } = await supabase.from('player_ranks').select('*').limit(10);
+
+        // 2. Si riotId fourni, chercher la ligne correspondante
+        let found = null, foundErr = null;
+        if (riotId) {
+            const [n, t] = riotId.split('#').map(s => s.trim());
+            const { data, error } = await supabase.from('player_ranks').select('*').ilike('riot_id', `${n}#${t}`).maybeSingle();
+            found = data;
+            foundErr = error;
+        }
+
+        // 3. Si riotId fourni, tenter un fetch Riot live pour comparer
+        let riotLive = null;
+        if (riotId) {
+            try {
+                const [n, t] = riotId.split('#').map(s => s.trim());
+                const { data: acc } = await getRiot(`${REGION_HOST}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(n)}/${encodeURIComponent(t)}`);
+                const { data: leagues } = await getRiot(`${PLATFORM_HOST}/lol/league/v4/entries/by-puuid/${acc.puuid}`);
+                riotLive = {
+                    puuid: acc.puuid,
+                    leagues: leagues,
+                };
+            } catch (e) {
+                riotLive = { error: e.message };
+            }
+        }
+
+        res.json({
+            allRows: allRows || [],
+            allErr: allErr?.message || null,
+            found: found || null,
+            foundErr: foundErr?.message || null,
+            riotLive,
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ─── TOURNAMENT ───────────────────────────────────────────
 const postRiot = async (url, body) => {
     return await axios.post(url, body, {
