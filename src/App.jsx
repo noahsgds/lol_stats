@@ -35,7 +35,7 @@ export default function App() {
         setTimeout(() => setToast(null), duration);
     }, []);
 
-    const analyzeSolo = useCallback(async (tagOverride) => {
+    const analyzeSolo = useCallback(async (tagOverride, rankHint) => {
         const tag = (tagOverride || soloInput).trim();
         const q = queue || null;
         if (!tag.includes('#')) { alert('Format : Pseudo#TAG'); return; }
@@ -60,9 +60,14 @@ export default function App() {
             setSoloSyncMsg('Chargement des données…');
             const [d, rankFromServer] = await Promise.all([
                 fetchAll(tag, q),
-                fetch(`${API_BASE}/rank?riotId=${encodeURIComponent(tag)}`).then(r => r.ok ? r.json() : {}).catch(() => ({})),
+                fetch(`${API_BASE}/rank?riotId=${encodeURIComponent(tag)}`).then(r => r.ok ? r.json() : null).catch(() => null),
             ]);
-            const rankSolo = syncResult.rank || rankFromServer || d.rank || {};
+            // Priority: fresh sync > server DB (bypass RLS) > rankHint from landing cards > local supabase (RLS blocked)
+            const rankSolo = syncResult.rank
+                || (rankFromServer && rankFromServer.riot_id ? rankFromServer : null)
+                || rankHint
+                || d.rank
+                || {};
             setSoloData({ ...d, rank: rankSolo, rawTag: tag });
             showToast(syncResult.added > 0 ? `✅ ${syncResult.added} nouveau(x) match(s) ajouté(s)` : '✅ Données à jour');
         } catch (e) {

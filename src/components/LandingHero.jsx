@@ -32,9 +32,11 @@ export default function LandingHero({ soloInput, setSoloInput, queue, setQueue, 
             .finally(() => setLoadingPlayers(false));
     }, []);
 
-    const handleAnalyze = (tag) => {
+    const handleAnalyze = (player) => {
+        const tag = typeof player === 'string' ? player : player.riot_id;
+        const rankHint = typeof player === 'object' ? player : null;
         setSoloInput(tag);
-        onAnalyze(tag);
+        onAnalyze(tag, rankHint);
     };
 
     const handleUpdate = async (tag) => {
@@ -137,7 +139,7 @@ export default function LandingHero({ soloInput, setSoloInput, queue, setQueue, 
                                         </div>
                                     </div>
                                     <div className="lpc-actions">
-                                        <button className="lpc-btn-analyze" onClick={() => handleAnalyze(p.riot_id)} disabled={loading}>
+                                        <button className="lpc-btn-analyze" onClick={() => handleAnalyze(p)} disabled={loading}>
                                             Analyser
                                         </button>
                                         <button className="lpc-btn-update" onClick={() => handleUpdate(p.riot_id)} disabled={isUpd || loading}>
