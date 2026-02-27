@@ -12,12 +12,8 @@ const TIER_COLOR = {
     PLATINUM: '#00c8b0', EMERALD: '#4ade80', DIAMOND: '#4cb8d8',
     MASTER: '#a855f7', GRANDMASTER: '#e74c3c', CHALLENGER: '#f1c40f',
 };
-const emblemPng = t => t ? `/ranks/${t.toLowerCase()}.png` : null;
 const emblemCDN = t => t ? `https://opgg-static.akamaized.net/images/medals_new/${t.toLowerCase()}.png` : null;
-function emblemFallback(t, tried) {
-    if (tried === 'png') return emblemCDN(t);
-    return null;
-}
+function emblemFallback(_t, _tried) { return null; }
 function tierLabel(tier, rank) {
     if (!tier) return 'Non classé';
     const fr = TIER_FR[tier] || tier;
@@ -68,7 +64,7 @@ export default function ProfileCard({ data, isP2, onDashboard }) {
     const qG     = (qWins ?? 0) + (qLoss ?? 0);
     const qWr    = qG > 0 ? Math.round((qWins ?? 0) / qG * 100) : null;
     const tColor = TIER_COLOR[tier] || 'var(--text-dim)';
-    const eUrl   = emblemPng(tier);
+    const eUrl   = emblemCDN(tier);
     const lpPct  = lp !== null && lp !== undefined ? Math.min(100, lp) : 0;
 
     /* summary stats */
@@ -90,7 +86,7 @@ export default function ProfileCard({ data, isP2, onDashboard }) {
                     <img
                         className="pc2-avatar"
                         src={`https://ddragon.leagueoflegends.com/cdn/${D_VER}/img/profileicon/${r.profile_icon_id || 29}.png`}
-                        onError={e => { e.target.src = `https://ddragon.leagueoflegends.com/cdn/${D_VER}/img/profileicon/29.png`; }}
+                        onError={e => { e.target.onerror = null; e.target.style.opacity = '.3'; }}
                         alt=""
                     />
                     {r.summoner_level ? <span className="pc2-level">Niv.{r.summoner_level}</span> : null}
@@ -117,12 +113,7 @@ export default function ProfileCard({ data, isP2, onDashboard }) {
                 <div className="pc2-rank-body">
                     <div style={{ flexShrink: 0 }}>
                         {eUrl ? (
-                            <img className="pc2-emblem" src={eUrl} alt={tier || ''} onError={e => {
-                                const tried = e.target.dataset.tried || 'png';
-                                const next = emblemFallback(tier, tried);
-                                if (next) { e.target.dataset.tried = 'cdn'; e.target.src = next; }
-                                else e.target.style.opacity = '.15';
-                            }} />
+                            <img className="pc2-emblem" src={eUrl} alt={tier || ''} onError={e => { e.target.style.opacity = '.15'; }} />
                         ) : <div className="pc2-emblem-empty">?</div>}
                     </div>
                     <div className="pc2-rank-info">

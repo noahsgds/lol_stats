@@ -552,12 +552,8 @@ const TIER_COLOR_DB = {
     PLATINUM: '#00e0d0', EMERALD: '#4ade80', DIAMOND: '#4fc3f7',
     MASTER: '#9b59b6', GRANDMASTER: '#e74c3c', CHALLENGER: '#f1c40f',
 };
-function dbEmblemUrl(tier) { return tier ? `/ranks/${tier.toLowerCase()}.png` : null; }
-function dbEmblemFallbackChain(tier, tried) {
-    if (tried === 'png') return tier ? `/ranks/${tier.toLowerCase()}.svg` : null;
-    if (tried === 'svg') return tier ? `https://opgg-static.akamaized.net/images/medals_new/${tier.toLowerCase()}.png` : null;
-    return null;
-}
+function dbEmblemUrl(tier) { return tier ? `https://opgg-static.akamaized.net/images/medals_new/${tier.toLowerCase()}.png` : null; }
+function dbEmblemFallbackChain(_tier, _tried) { return null; }
 function dbRankLabel(tier, rank) {
     if (!tier) return 'Non classé';
     const t = TIER_SHORT_DB[tier] || tier;
@@ -661,7 +657,7 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false, lp
                         <button className="db-back" onClick={onClose}>← Retour</button>
                         <img className="db-avatar"
                             src={`https://ddragon.leagueoflegends.com/cdn/${D_VER}/img/profileicon/${r.profile_icon_id || 29}.png`}
-                            onError={e => { e.target.style.opacity = '.3'; }} alt="" />
+                            onError={e => { e.target.onerror = null; e.target.style.opacity = '.3'; }} alt="" />
                         <div style={{ flex: 1, minWidth: 0 }}>
                             <div className="db-name" style={{ color: cssColor }}>{name}</div>
                             {/* Solo/Flex toggle */}
@@ -679,12 +675,7 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false, lp
                                     return (
                                         <div className="db-rank-display">
                                             {dUrl && <img className="db-rank-emblem" src={dUrl} alt={dTier || ''}
-    onError={e => {
-        const tried = e.target.dataset.tried || 'png';
-        const next = dbEmblemFallbackChain(dTier, tried);
-        if (next) { e.target.dataset.tried = tried === 'png' ? 'svg' : 'cdn'; e.target.src = next; }
-        else { e.target.style.display = 'none'; }
-    }} />}
+    onError={e => { e.target.style.opacity = '.15'; }} />}
                                             <div>
                                                 <div className="db-rank-label" style={{ color: dCol }}>{dbRankLabel(dTier, dRank)}</div>
                                                 {dTier && dLp !== null && dLp !== undefined && (

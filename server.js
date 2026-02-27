@@ -76,42 +76,45 @@ app.get('/sync', async (req, res) => {
         // 4. Calcul des nouveaux matchs
         const existingSet = new Set((existingRes.data || []).map(r => r.match_id));
         const newMatchIds = matchIds.filter(id => !existingSet.has(id));
-
-        // Rank upsert fire-and-forget (après newMatchIds pour LP tracking par partie)
-        (async () => {
-            try {
-                let rankData = {
-                    puuid, riot_id: fullRiotId, summoner_id: sum.id,
-                    profile_icon_id: sum.profileIconId, summoner_level: sum.summonerLevel,
-                    updated_at: new Date().toISOString()
-                };
-                (leaguesRes.data || []).forEach(e => {
-                    if (e.queueType === 'RANKED_SOLO_5x5')
-                        rankData = { ...rankData, solo_tier: e.tier, solo_rank: e.rank, solo_lp: e.leaguePoints, solo_wins: e.wins, solo_losses: e.losses };
-                    if (e.queueType === 'RANKED_FLEX_SR')
-                        rankData = { ...rankData, flex_tier: e.tier, flex_rank: e.rank, flex_lp: e.leaguePoints, flex_wins: e.wins, flex_losses: e.losses };
-                });
-                // Snapshot rang avec match_ids pour LP tracking
-                const { data: prevRank } = await supabase.from('player_ranks')
-                    .select('rank_history').eq('puuid', puuid).maybeSingle();
-                const rankHist = prevRank?.rank_history || [];
-                rankHist.push({
-                    date: new Date().toISOString().split('T')[0],
-                    timestamp: new Date().toISOString(),
-                    solo_tier: rankData.solo_tier || null, solo_rank: rankData.solo_rank || null, solo_lp: rankData.solo_lp ?? null,
-                    flex_tier: rankData.flex_tier || null, flex_rank: rankData.flex_rank || null, flex_lp: rankData.flex_lp ?? null,
-                    match_ids: newMatchIds,
-                });
-                rankData.rank_history = rankHist.slice(-50);
-                const { error: rankErr } = await supabase.from('player_ranks').upsert(rankData, { onConflict: 'puuid' });
-                if (rankErr) {
-                    console.warn('Rank upsert échoué, retry sans rank_history:', rankErr.message);
-                    const { rank_history: _ign, ...safeRankData } = rankData;
-                    await supabase.from('player_ranks').upsert(safeRankData, { onConflict: 'puuid' });
-                }
-            } catch (e) { console.warn('Rangs ignorés:', e.message); }
-        })();
         console.log(`   📋 ${newMatchIds.length} nouveau(x) sur ${matchIds.length}`);
+
+        // 5. Rank upsert (synchrone, garanti avant la réponse)
+        try {
+            let rankData = {
+                puuid, riot_id: fullRiotId, summoner_id: sum.id,
+                profile_icon_id: sum.profileIconId, summoner_level: sum.summonerLevel,
+                updated_at: new Date().toISOString()
+            };
+            (leaguesRes.data || []).forEach(e => {
+                if (e.queueType === 'RANKED_SOLO_5x5')
+                    rankData = { ...rankData, solo_tier: e.tier, solo_rank: e.rank, solo_lp: e.leaguePoints, solo_wins: e.wins, solo_losses: e.losses };
+                if (e.queueType === 'RANKED_FLEX_SR')
+                    rankData = { ...rankData, flex_tier: e.tier, flex_rank: e.rank, flex_lp: e.leaguePoints, flex_wins: e.wins, flex_losses: e.losses };
+            });
+            console.log(`   🏆 Rang solo: ${rankData.solo_tier || 'NON CLASSÉ'} ${rankData.solo_rank || ''} ${rankData.solo_lp ?? '?'}LP`);
+            // Snapshot rang avec match_ids pour LP tracking
+            const { data: prevRank } = await supabase.from('player_ranks')
+                .select('rank_history').eq('puuid', puuid).maybeSingle();
+            const rankHist = prevRank?.rank_history || [];
+            rankHist.push({
+                date: new Date().toISOString().split('T')[0],
+                timestamp: new Date().toISOString(),
+                solo_tier: rankData.solo_tier || null, solo_rank: rankData.solo_rank || null, solo_lp: rankData.solo_lp ?? null,
+                flex_tier: rankData.flex_tier || null, flex_rank: rankData.flex_rank || null, flex_lp: rankData.flex_lp ?? null,
+                match_ids: newMatchIds,
+            });
+            rankData.rank_history = rankHist.slice(-50);
+            const { error: rankErr } = await supabase.from('player_ranks').upsert(rankData, { onConflict: 'puuid' });
+            if (rankErr) {
+                console.warn('Rank upsert échoué, retry sans rank_history:', rankErr.message);
+                const { rank_history: _ign, ...safeRankData } = rankData;
+                const { error: rankErr2 } = await supabase.from('player_ranks').upsert(safeRankData, { onConflict: 'puuid' });
+                if (rankErr2) console.warn('Rank retry échoué:', rankErr2.message);
+                else console.log('   ✅ Rang sauvegardé (sans rank_history)');
+            } else {
+                console.log('   ✅ Rang sauvegardé');
+            }
+        } catch (e) { console.warn('Rangs ignorés:', e.message); }
 
         let added = 0;
         if (newMatchIds.length > 0) {
