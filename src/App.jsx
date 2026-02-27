@@ -35,8 +35,8 @@ export default function App() {
         setTimeout(() => setToast(null), duration);
     }, []);
 
-    const analyzeSolo = useCallback(async () => {
-        const tag = soloInput.trim();
+    const analyzeSolo = useCallback(async (tagOverride) => {
+        const tag = (tagOverride || soloInput).trim();
         const q = queue || null;
         if (!tag.includes('#')) { alert('Format : Pseudo#TAG'); return; }
         setSoloLoading(true);

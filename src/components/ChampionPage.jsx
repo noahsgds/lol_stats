@@ -34,6 +34,15 @@ async function fetchChampProbuilds(champ) {
     } catch { return []; }
 }
 
+async function fetchChallengerBuilds(champ) {
+    try {
+        const res = await fetch(`${API_BASE}/challenger-builds?champ=${encodeURIComponent(champ)}`);
+        if (!res.ok) return [];
+        const json = await res.json();
+        return json.games || [];
+    } catch { return []; }
+}
+
 async function fetchChampMatchups(champ) {
     try {
         const res = await fetch(`${API_BASE}/champion-matchups?champ=${encodeURIComponent(champ)}`);
@@ -156,51 +165,95 @@ function BuildTab({ champKey, champName, detail }) {
     );
 }
 
-/* ── ProBuildTab ── */
-function ProBuildTab({ champName }) {
-    const [games, setGames] = useState(null);
-    const [loading, setLoading] = useState(true);
+const TIER_BADGE = { CHALLENGER: '#f0e68c', GRANDMASTER: '#e84d00', MASTER: '#b24aee', DIAMOND: '#7ad1f5', EMERALD: '#4ade80', PLATINUM: '#5ec4b5' };
 
-    useEffect(() => {
-        setLoading(true);
-        fetchChampProbuilds(champName).then(g => { setGames(g); setLoading(false); });
-    }, [champName]);
-
-    if (loading) return <div className="chp-pb-loading">Recherche des parties récentes en Challenger/GM…</div>;
-    if (!games?.length) return (
-        <div className="chp-pb-loading">
-            <div style={{ fontSize: 24, marginBottom: 8 }}>📭</div>
-            Aucune partie trouvée en haut ELO pour ce champion dans notre base.<br />
-            <span style={{ fontSize: 12, marginTop: 6, display: 'block' }}>
-                Lance une analyse d'un joueur Challenger/GM pour alimenter les données.
-            </span>
+function ProBuildRow({ g }) {
+    const tierColor = TIER_BADGE[g.tier] || 'var(--text-mid)';
+    return (
+        <div className={`chp-pb-row ${g.win ? 'win' : 'loss'}`}>
+            <div className={`chp-pb-result ${g.win ? 'win' : 'loss'}`}>{g.win ? 'V' : 'D'}</div>
+            <div className="chp-pb-player">
+                <div className="chp-pb-name">{g.playerName}</div>
+                <div className="chp-pb-rank" style={{ color: tierColor }}>
+                    {g.tier ? `${g.tier}${g.rank ? ' ' + g.rank : ''}${g.lp != null ? ' · ' + g.lp + 'LP' : ''}` : 'Rang inconnu'}
+                </div>
+            </div>
+            <div className="chp-pb-kda">{g.kills}/{g.deaths}/{g.assists}</div>
+            <div className="chp-pb-items">
+                {[g.item0, g.item1, g.item2, g.item3, g.item4, g.item5].filter(Boolean).map((id, j) => (
+                    <div key={j} className="chp-pb-item">
+                        <img src={`${DDRAGON}/img/item/${id}.png`} alt=""
+                            onError={e => { e.target.onerror = null; e.target.style.display = 'none'; }} />
+                    </div>
+                ))}
+            </div>
+            <div className="chp-pb-time">{g.gameDate}</div>
         </div>
     );
+}
+
+/* ── ProBuildTab ── */
+function ProBuildTab({ champName }) {
+    const [dbGames, setDbGames] = useState(null);
+    const [challGames, setChallGames] = useState(null);
+    const [loadingDb, setLoadingDb] = useState(true);
+    const [loadingChall, setLoadingChall] = useState(true);
+
+    useEffect(() => {
+        setLoadingDb(true);
+        setLoadingChall(true);
+        setDbGames(null);
+        setChallGames(null);
+        fetchChampProbuilds(champName).then(g => { setDbGames(g); setLoadingDb(false); });
+        fetchChallengerBuilds(champName).then(g => { setChallGames(g); setLoadingChall(false); });
+    }, [champName]);
+
+    const hasChall = challGames?.length > 0;
+    const hasDb    = dbGames?.length > 0;
+    const allDone  = !loadingDb && !loadingChall;
 
     return (
         <div className="chp-probuild-list">
-            <div className="chp-source-note">Parties récentes de joueurs Diamond+ dans notre base de données</div>
-            {games.map((g, i) => (
-                <div key={i} className={`chp-pb-row ${g.win ? 'win' : 'loss'}`}>
-                    <div className={`chp-pb-result ${g.win ? 'win' : 'loss'}`}>
-                        {g.win ? 'V' : 'D'}
-                    </div>
-                    <div className="chp-pb-player">
-                        <div className="chp-pb-name">{g.playerName}</div>
-                        <div className="chp-pb-rank">{g.tier ? `${g.tier} ${g.rank || ''}` : 'Rang inconnu'}</div>
-                    </div>
-                    <div className="chp-pb-kda">{g.kills}/{g.deaths}/{g.assists}</div>
-                    <div className="chp-pb-items">
-                        {[g.item0, g.item1, g.item2, g.item3, g.item4, g.item5].filter(Boolean).map((id, j) => (
-                            <div key={j} className="chp-pb-item">
-                                <img src={`${DDRAGON}/img/item/${id}.png`} alt=""
-                                    onError={e => { e.target.onerror = null; e.target.style.display = 'none'; }} />
-                            </div>
-                        ))}
-                    </div>
-                    <div className="chp-pb-time">{timeAgo ? timeAgo(g.gameDate) : g.gameDate}</div>
+            {/* Challenger section */}
+            <div className="chp-matchup-section">
+                <div className="chp-matchup-section-title" style={{ color: '#f0e68c' }}>
+                    👑 Parties Challenger en direct
                 </div>
-            ))}
+                {loadingChall ? (
+                    <div className="chp-pb-loading" style={{ padding: '14px 0' }}>
+                        Récupération des builds Challenger… (peut prendre 20–40s)
+                    </div>
+                ) : hasChall ? (
+                    challGames.map((g, i) => <ProBuildRow key={i} g={g} />)
+                ) : (
+                    <div style={{ color: 'var(--text-dim)', fontSize: 13, padding: '8px 0' }}>
+                        Aucun Challenger trouvé pour ce champion (essaie un champion très joué).
+                    </div>
+                )}
+            </div>
+
+            {/* DB section */}
+            <div className="chp-matchup-section" style={{ marginTop: 24 }}>
+                <div className="chp-matchup-section-title">
+                    🗄 Parties dans notre base de données
+                </div>
+                {loadingDb ? (
+                    <div className="chp-pb-loading" style={{ padding: '14px 0' }}>Chargement…</div>
+                ) : hasDb ? (
+                    dbGames.map((g, i) => <ProBuildRow key={i} g={g} />)
+                ) : (
+                    <div style={{ color: 'var(--text-dim)', fontSize: 13, padding: '8px 0' }}>
+                        Aucune partie dans notre base. Lance une analyse pour enrichir les données.
+                    </div>
+                )}
+            </div>
+
+            {allDone && !hasChall && !hasDb && (
+                <div className="chp-pb-loading">
+                    <div style={{ fontSize: 24, marginBottom: 8 }}>📭</div>
+                    Aucune donnée disponible pour {champName}.
+                </div>
+            )}
         </div>
     );
 }

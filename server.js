@@ -594,5 +594,113 @@ app.get('/champion-matchups', async (req, res) => {
     }
 });
 
+// ─── STORED PLAYERS (liste des joueurs en base) ───────────
+app.get('/stored-players', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('player_ranks')
+            .select('riot_id, solo_tier, solo_rank, solo_lp, solo_wins, solo_losses, flex_tier, flex_rank, flex_lp, profile_icon_id, summoner_level, updated_at')
+            .order('updated_at', { ascending: false });
+        if (error) return res.status(500).json({ error: error.message });
+        res.json({ players: data || [] });
+    } catch (err) {
+        console.error('Stored players error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── CHALLENGER BUILDS (builds des challos pour un champ) ─
+const challBuildsCache = {};  // { champ: { data, ts } }
+const CHALL_CACHE_TTL = 3 * 60 * 60 * 1000; // 3h
+
+app.get('/challenger-builds', async (req, res) => {
+    try {
+        const champ = req.query.champ;
+        if (!champ) return res.status(400).json({ error: 'champ requis' });
+
+        // Cache hit
+        const cached = challBuildsCache[champ];
+        if (cached && (Date.now() - cached.ts) < CHALL_CACHE_TTL) {
+            console.log(`🗄️  Challenger builds cache hit: ${champ}`);
+            return res.json(cached.data);
+        }
+
+        console.log(`🔍 Challenger builds fetch: ${champ}`);
+
+        // 1. Récupérer la liste Challenger
+        const { data: leagueData } = await getRiot(`${PLATFORM_HOST}/lol/league/v4/challengerleagues/by-queue/RANKED_SOLO_5x5`);
+        const topPlayers = (leagueData.entries || [])
+            .sort((a, b) => b.leaguePoints - a.leaguePoints)
+            .slice(0, 30);
+
+        // 2. Résoudre les PUUIDs (par summonerId, par batch de 5)
+        const puuids = [];
+        for (let i = 0; i < topPlayers.length; i += 5) {
+            const batch = topPlayers.slice(i, i + 5);
+            const results = await Promise.all(batch.map(async p => {
+                try {
+                    const { data: sum } = await getRiot(`${PLATFORM_HOST}/lol/summoner/v4/summoners/${p.summonerId}`);
+                    return { puuid: sum.puuid, summonerName: p.summonerName, lp: p.leaguePoints };
+                } catch { return null; }
+            }));
+            puuids.push(...results.filter(Boolean));
+            if (i + 5 < topPlayers.length) await sleep(200);
+        }
+
+        // 3. Pour chaque joueur, récupérer les derniers match IDs et chercher ce champion
+        const builds = [];
+        for (const player of puuids) {
+            if (builds.length >= 20) break;
+            try {
+                const { data: matchIds } = await getRiot(
+                    `${REGION_HOST}/lol/match/v5/matches/by-puuid/${player.puuid}/ids?start=0&count=20`
+                );
+                await sleep(100);
+                for (const matchId of matchIds) {
+                    if (builds.length >= 20) break;
+                    try {
+                        const { data: detail } = await getRiot(`${REGION_HOST}/lol/match/v5/matches/${matchId}`);
+                        const ps = detail.info?.participants || [];
+                        const p = ps.find(x => x.puuid === player.puuid && x.championName === champ);
+                        if (!p) continue;
+
+                        // Résoudre le Riot ID
+                        let riotId = player.summonerName;
+                        try {
+                            const { data: acc } = await getRiot(`${REGION_HOST}/riot/account/v1/accounts/by-puuid/${player.puuid}`);
+                            riotId = `${acc.gameName}#${acc.tagLine}`;
+                        } catch { /* keep summonerName */ }
+
+                        builds.push({
+                            playerName: riotId.split('#')[0],
+                            riotId,
+                            lp: player.lp,
+                            tier: 'CHALLENGER',
+                            win: p.win,
+                            kills: p.kills, deaths: p.deaths, assists: p.assists,
+                            item0: p.item0, item1: p.item1, item2: p.item2,
+                            item3: p.item3, item4: p.item4, item5: p.item5,
+                            summoner1Id: p.summoner1Id, summoner2Id: p.summoner2Id,
+                            gameDate: detail.info.gameEndTimestamp
+                                ? new Date(detail.info.gameEndTimestamp).toLocaleDateString('fr-FR')
+                                : '—',
+                        });
+                        await sleep(100);
+                        break; // 1 game par joueur suffit
+                    } catch { /* match skip */ }
+                }
+            } catch { /* player skip */ }
+        }
+
+        const result = { games: builds, fetchedAt: new Date().toISOString() };
+        challBuildsCache[champ] = { data: result, ts: Date.now() };
+        console.log(`   ✅ ${builds.length} builds challenger pour ${champ}`);
+        res.json(result);
+    } catch (err) {
+        console.error('Challenger builds error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Serveur prêt → http://localhost:${PORT}`));
