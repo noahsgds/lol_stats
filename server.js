@@ -415,5 +415,184 @@ app.get('/match/:matchId', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+// ─── CHAMPION STATS (agrégation depuis bronze_matches) ────
+app.get('/champion-stats', async (req, res) => {
+    try {
+        const champ = req.query.champ;
+        if (!champ) return res.status(400).json({ error: 'champ requis' });
+
+        // Chercher les matchs contenant ce champion (text scan sur JSONB)
+        const { data: rows, error } = await supabase
+            .from('bronze_matches')
+            .select('match_data')
+            .filter('match_data::text', 'ilike', `%"championName":"${champ}"%`)
+            .limit(100);
+
+        if (error) return res.status(500).json({ error: error.message });
+        if (!rows?.length) return res.json({ games: 0, wr: 0, kda: 0, csMin: 0, topItems: [], topSpells: [] });
+
+        // Extraire les participants qui jouaient ce champion
+        const participants = [];
+        for (const row of rows) {
+            const ps = row.match_data?.info?.participants || [];
+            for (const p of ps) {
+                if (p.championName === champ) participants.push(p);
+            }
+        }
+
+        if (!participants.length) return res.json({ games: 0, wr: 0, kda: 0, csMin: 0, topItems: [], topSpells: [] });
+
+        // Stats globales
+        const games = participants.length;
+        const wins  = participants.filter(p => p.win).length;
+        const wr    = Math.round(wins / games * 100);
+        const kda   = participants.reduce((a, p) => a + (p.kills + p.assists) / Math.max(p.deaths, 1), 0) / games;
+        const csMin = participants.reduce((a, p) => {
+            const dur = Math.max((p.timePlayed || row?.match_data?.info?.gameDuration || 1800) / 60, 1);
+            return a + (p.totalMinionsKilled + (p.neutralMinionsKilled || 0)) / dur;
+        }, 0) / games;
+
+        // Agrégation des items
+        const itemMap = {};
+        const itemWinMap = {};
+        for (const p of participants) {
+            for (const slot of ['item0','item1','item2','item3','item4','item5','item6']) {
+                const id = p[slot];
+                if (!id || id === 0) continue;
+                itemMap[id] = (itemMap[id] || 0) + 1;
+                if (p.win) itemWinMap[id] = (itemWinMap[id] || 0) + 1;
+            }
+        }
+        const topItems = Object.entries(itemMap)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8)
+            .map(([id, count]) => ({
+                id,
+                pickPct: Math.round(count / games * 100),
+                wr: Math.round((itemWinMap[id] || 0) / count * 100),
+            }));
+
+        // Agrégation des sorts
+        const spellMap = {};
+        for (const p of participants) {
+            const combo = [p.summoner1Id, p.summoner2Id].sort().join('+');
+            spellMap[combo] = (spellMap[combo] || 0) + 1;
+        }
+        const topSpellCombos = Object.entries(spellMap).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        const SPELL_NAMES = { 4:'Flash', 11:'Smite', 14:'Ignite', 21:'Barrier', 3:'Exhaust', 1:'Cleanse', 6:'Ghost', 7:'Heal', 13:'Clarity', 32:'Mark' };
+        const topSpells = topSpellCombos.map(([combo, count]) => {
+            const [d, f] = combo.split('+');
+            return { d: SPELL_NAMES[d] || `Sort ${d}`, f: SPELL_NAMES[f] || `Sort ${f}`, pct: Math.round(count / games * 100) };
+        });
+
+        res.json({ games, wr, kda: parseFloat(kda.toFixed(2)), csMin: parseFloat(csMin.toFixed(1)), topItems, topSpells });
+    } catch (err) {
+        console.error('Champion stats error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── CHAMPION PROBUILDS (parties récentes de joueurs hauts ELO) ─
+app.get('/champion-probuilds', async (req, res) => {
+    try {
+        const champ = req.query.champ;
+        if (!champ) return res.status(400).json({ error: 'champ requis' });
+
+        // Chercher les matchs de ce champion depuis notre base
+        const { data: rows, error } = await supabase
+            .from('bronze_matches')
+            .select('match_data')
+            .filter('match_data::text', 'ilike', `%"championName":"${champ}"%`)
+            .order('match_id', { ascending: false })
+            .limit(50);
+
+        if (error || !rows?.length) return res.json({ games: [] });
+
+        const games = [];
+        for (const row of rows) {
+            const info = row.match_data?.info;
+            if (!info) continue;
+            const ps = info.participants || [];
+            const p = ps.find(x => x.championName === champ);
+            if (!p) continue;
+
+            // Chercher le rang du joueur dans notre table
+            const { data: rankRow } = await supabase
+                .from('player_ranks')
+                .select('riot_id, solo_tier, solo_rank')
+                .eq('puuid', p.puuid)
+                .maybeSingle();
+
+            games.push({
+                playerName: rankRow?.riot_id?.split('#')[0] || p.riotIdGameName || p.summonerName || 'Inconnu',
+                tier: rankRow?.solo_tier || null,
+                rank: rankRow?.solo_rank || null,
+                win: p.win,
+                kills: p.kills, deaths: p.deaths, assists: p.assists,
+                item0: p.item0, item1: p.item1, item2: p.item2,
+                item3: p.item3, item4: p.item4, item5: p.item5,
+                gameDate: info.gameEndTimestamp
+                    ? new Date(info.gameEndTimestamp).toLocaleDateString('fr-FR')
+                    : '—',
+            });
+            if (games.length >= 15) break;
+        }
+
+        res.json({ games });
+    } catch (err) {
+        console.error('Probuilds error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── CHAMPION MATCHUPS (win/loss vs chaque adversaire) ────
+app.get('/champion-matchups', async (req, res) => {
+    try {
+        const champ = req.query.champ;
+        if (!champ) return res.status(400).json({ error: 'champ requis' });
+
+        const { data: rows, error } = await supabase
+            .from('bronze_matches')
+            .select('match_data')
+            .filter('match_data::text', 'ilike', `%"championName":"${champ}"%`)
+            .limit(100);
+
+        if (error || !rows?.length) return res.json({ matchups: [] });
+
+        const vsMap = {}; // { champName: { games, wins } }
+
+        for (const row of rows) {
+            const ps = row.match_data?.info?.participants || [];
+            const player = ps.find(x => x.championName === champ);
+            if (!player) continue;
+
+            // Adversaires = équipe opposée
+            const opponents = ps.filter(x => x.teamId !== player.teamId);
+            for (const opp of opponents) {
+                const name = opp.championName;
+                if (!name) continue;
+                vsMap[name] = vsMap[name] || { games: 0, wins: 0 };
+                vsMap[name].games++;
+                if (player.win) vsMap[name].wins++;
+            }
+        }
+
+        const matchups = Object.entries(vsMap)
+            .filter(([, v]) => v.games >= 1)
+            .map(([vs, v]) => ({
+                vs,
+                games: v.games,
+                wr: Math.round(v.wins / v.games * 100),
+            }))
+            .sort((a, b) => b.games - a.games)
+            .slice(0, 20);
+
+        res.json({ matchups });
+    } catch (err) {
+        console.error('Matchups error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Serveur prêt → http://localhost:${PORT}`));

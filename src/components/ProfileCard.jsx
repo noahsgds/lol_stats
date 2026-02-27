@@ -40,7 +40,7 @@ function topChamps(history, n = 3) {
         .slice(0, n);
 }
 
-export default function ProfileCard({ data, isP2, onDashboard }) {
+export default function ProfileCard({ data, isP2, onDashboard, variant }) {
     const { rank: r, global: g, history: h } = data;
     const [activeQ, setActiveQ] = useState('solo');
 
@@ -77,11 +77,13 @@ export default function ProfileCard({ data, isP2, onDashboard }) {
     const champs = topChamps(h);
     const last10 = (h || []).slice(0, 10);
 
+    const isHero = variant === 'hero';
+
     return (
-        <div className="pc2-wrap fade-in">
+        <div className={`pc2-wrap fade-in${isHero ? ' pc2-hero' : ''}`}>
 
             {/* ── Header : avatar · nom · stats rapides ── */}
-            <div className="pc2-header db-clickable" onClick={onDashboard} title="Ouvrir le dashboard">
+            <div className={`pc2-header${onDashboard ? ' db-clickable' : ''}`} onClick={onDashboard || undefined} title={onDashboard ? 'Ouvrir le dashboard' : undefined}>
                 <div className="pc2-avatar-wrap">
                     <img
                         className="pc2-avatar"

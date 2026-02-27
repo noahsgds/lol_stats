@@ -561,7 +561,7 @@ function dbRankLabel(tier, rank) {
     return `${t} ${rank || ''}`;
 }
 
-export default function PlayerDashboard({ data, pid, onClose, inline = false, lpMap = {} }) {
+export default function PlayerDashboard({ data, pid, onClose, inline = false, lpMap = {}, showHeader = true }) {
     const isP2     = pid === 'p2';
     const color    = isP2 ? '#e84d00' : '#f0a500';
     const cssColor = isP2 ? 'var(--p2)' : 'var(--p1)';
@@ -653,7 +653,7 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false, lp
                 <div className="db-panel">
 
                     {/* ── HEADER ── */}
-                    <div className="db-header">
+                    {showHeader && <div className="db-header">
                         <button className="db-back" onClick={onClose}>← Retour</button>
                         <img className="db-avatar"
                             src={`https://ddragon.leagueoflegends.com/cdn/${D_VER}/img/profileicon/${r.profile_icon_id || 29}.png`}
@@ -695,7 +695,7 @@ export default function PlayerDashboard({ data, pid, onClose, inline = false, lp
                                 </div>
                             </div>
                         )}
-                    </div>
+                    </div>}
 
                     {/* ── OVERVIEW ── */}
                     <div className="db-overview">
