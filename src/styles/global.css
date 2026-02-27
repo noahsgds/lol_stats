@@ -929,7 +929,7 @@ select option { background: #1a1610; }
 }
 
 /* Inline dashboard panel (Stats mode) */
-.db-inline { width: 100%; margin-top: 6px; }
+.db-inline { width: 100%; }
 .db-inline .db-panel {
     width: 100%;
     height: auto;
@@ -2542,13 +2542,31 @@ select option { background: #1a1610; }
 .solo-results {
     display: grid;
     grid-template-columns: minmax(320px, 1.1fr) 1.6fr;
+    grid-template-rows: auto auto;
     gap: 14px;
-    align-items: start;
 }
-.solo-left-col  { display: flex; flex-direction: column; gap: 0; }
-.solo-history-col { overflow: hidden; }
+/* Profile card: column 1, row 1 — stretches to match history height */
+.solo-hero-card {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: stretch;
+}
+/* History: column 2, row 1 */
+.solo-history-col {
+    grid-column: 2;
+    grid-row: 1;
+    overflow: hidden;
+}
+/* Stats panel: full width, row 2 */
+.db-inline {
+    grid-column: 1 / -1;
+    grid-row: 2;
+}
 @media (max-width: 900px) {
     .solo-results { grid-template-columns: 1fr; }
+    .solo-hero-card   { grid-column: 1; grid-row: 1; }
+    .solo-history-col { grid-column: 1; grid-row: 2; }
+    .db-inline        { grid-column: 1; grid-row: 3; }
 }
 
 /* ══════════════════════════════════════

@@ -159,16 +159,14 @@ export default function App() {
                         </div>
                     ) : soloData ? (
                         <div className="solo-results">
-                            <div className="solo-left-col">
-                                <div className="card solo-hero-card" style={{ overflow: 'hidden' }}>
-                                    <ProfileCard data={soloData} isP2={false} onDashboard={null} variant="hero" />
-                                </div>
-                                <PlayerDashboard data={soloData} pid="p1" onClose={() => setSoloData(null)} inline lpMap={soloLpMap} showHeader={false} />
+                            <div className="card solo-hero-card" style={{ overflow: 'hidden' }}>
+                                <ProfileCard data={soloData} isP2={false} onDashboard={null} variant="hero" />
                             </div>
                             <div className="card solo-history-col">
                                 <div className="card-head"><div className="ch-bar ch-p1" />Historique récent</div>
                                 <MatchHistory history={soloData?.history} loading={false} trackedTag={soloData?.rawTag} lpMap={soloLpMap} />
                             </div>
+                            <PlayerDashboard data={soloData} pid="p1" onClose={() => setSoloData(null)} inline lpMap={soloLpMap} showHeader={false} />
                         </div>
                     ) : (
                         <LandingHero soloInput={soloInput} setSoloInput={setSoloInput} queue={queue} setQueue={setQueue} loading={soloLoading} onAnalyze={analyzeSolo} />
