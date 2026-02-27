@@ -141,7 +141,7 @@ app.get('/sync', async (req, res) => {
 
         console.log(`   ✅ +${added} nouveaux | ${existingSet.size} déjà en base`);
         res.set('Cache-Control', 'no-store');
-        res.json({ ok: true, added, skipped: existingSet.size });
+        res.json({ ok: true, added, skipped: existingSet.size, rank: rankData });
 
     } catch (err) {
         console.error('Sync error:', err.message);

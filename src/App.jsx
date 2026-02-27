@@ -73,10 +73,16 @@ export default function App() {
             };
             const [s1, s2] = await Promise.all([syncOne(p1), syncOne(p2)]);
 
-            // 3. Fetch données fraîches depuis Supabase
+            // 3. Fetch données fraîches depuis Supabase (history + global stats)
             setSyncMsg('Chargement des données…');
             const [d1, d2] = await Promise.all([fetchAll(p1, q), fetchAll(p2, q)]);
-            setPlayersData({ p1: { ...d1, rawTag: p1 }, p2: { ...d2, rawTag: p2 } });
+            // Priorité au rang retourné directement par /sync (bypass RLS Supabase)
+            const rank1 = s1.rank || d1.rank || {};
+            const rank2 = s2.rank || d2.rank || {};
+            setPlayersData({
+                p1: { ...d1, rank: rank1, rawTag: p1 },
+                p2: { ...d2, rank: rank2, rawTag: p2 },
+            });
 
             const failed = s1.failed || s2.failed;
             const newCount = (s1.added || 0) + (s2.added || 0);
@@ -117,7 +123,9 @@ export default function App() {
 
             setSoloSyncMsg('Chargement des données…');
             const d = await fetchAll(tag, q);
-            setSoloData({ ...d, rawTag: tag });
+            // Priorité au rang retourné par /sync (bypass RLS Supabase)
+            const rankSolo = syncResult.rank || d.rank || {};
+            setSoloData({ ...d, rank: rankSolo, rawTag: tag });
             showToast(syncResult.added > 0 ? `✅ ${syncResult.added} nouveau(x) match(s) ajouté(s)` : '✅ Données à jour');
         } catch (e) {
             console.error(e);
