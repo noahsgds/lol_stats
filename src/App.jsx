@@ -175,8 +175,10 @@ export default function App() {
                         <div className="bento">
                             {/* J1 */}
                             <div className="col">
-                                <div className="card">
+                                <div className="card" style={{ overflow: 'hidden' }}>
                                     <ProfileCard data={p1} isP2={false} onDashboard={() => setDashPid('p1')} />
+                                </div>
+                                <div className="card">
                                     <div className="card-head"><div className="ch-bar ch-p1" />Historique récent</div>
                                     <MatchHistory history={p1?.history} loading={false} trackedTag={p1?.rawTag} lpMap={lpMap1} />
                                 </div>
@@ -184,11 +186,11 @@ export default function App() {
                             {/* CENTER */}
                             <div className="col">
                                 <div className="card">
-                                    <div className="card-head"><div className="ch-bar ch-gold" />Profil Radar</div>
+                                    <div className="card-head"><div className="ch-bar ch-gold" />Radars comparatifs</div>
                                     <RadarChartPanel g1={p1?.global} g2={p2?.global} />
                                 </div>
                                 <div className="card">
-                                    <div className="card-head"><div className="ch-bar ch-gold" />Forme récente — 10 derniers matchs</div>
+                                    <div className="card-head"><div className="ch-bar ch-gold" />Forme — 10 derniers matchs</div>
                                     <TrendChartPanel h1={p1?.history} h2={p2?.history} />
                                 </div>
                                 <div className="card">
@@ -196,7 +198,7 @@ export default function App() {
                                     <CombatSection g1={p1?.global} g2={p2?.global} />
                                 </div>
                                 <div className="card">
-                                    <div className="card-head"><div className="ch-bar ch-gold" />Insights Qualitatifs</div>
+                                    <div className="card-head"><div className="ch-bar ch-gold" />Insights</div>
                                     <InsightsSection g1={p1?.global} g2={p2?.global} h1={p1?.history} h2={p2?.history} tag1={p1?.rawTag} tag2={p2?.rawTag} />
                                 </div>
                                 <div className="card">
@@ -206,8 +208,10 @@ export default function App() {
                             </div>
                             {/* J2 */}
                             <div className="col">
-                                <div className="card">
+                                <div className="card" style={{ overflow: 'hidden' }}>
                                     <ProfileCard data={p2} isP2={true} onDashboard={() => setDashPid('p2')} />
+                                </div>
+                                <div className="card">
                                     <div className="card-head"><div className="ch-bar ch-p2" />Historique récent</div>
                                     <MatchHistory history={p2?.history} loading={false} trackedTag={p2?.rawTag} lpMap={lpMap2} />
                                 </div>
