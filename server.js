@@ -594,6 +594,25 @@ app.get('/champion-matchups', async (req, res) => {
     }
 });
 
+// ─── RANK (rang d'un joueur spécifique, bypass RLS) ───────
+app.get('/rank', async (req, res) => {
+    try {
+        const riotId = req.query.riotId;
+        if (!riotId?.includes('#')) return res.status(400).json({ error: 'Format: Pseudo#TAG' });
+        const [n, t] = riotId.split('#').map(s => s.trim());
+        const { data, error } = await supabase
+            .from('player_ranks')
+            .select('*')
+            .ilike('riot_id', `${n}#${t}`)
+            .maybeSingle();
+        if (error) return res.status(500).json({ error: error.message });
+        res.json(data || {});
+    } catch (err) {
+        console.error('Rank error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ─── STORED PLAYERS (liste des joueurs en base) ───────────
 app.get('/stored-players', async (req, res) => {
     try {

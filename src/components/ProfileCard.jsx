@@ -193,9 +193,11 @@ export default function ProfileCard({ data, isP2, onDashboard, variant }) {
             )}
 
             {/* ── Dashboard ── */}
-            <button className="pc2-dash-btn" onClick={e => { e.stopPropagation(); onDashboard(); }}>
-                📊 Dashboard complet →
-            </button>
+            {onDashboard && (
+                <button className="pc2-dash-btn" onClick={e => { e.stopPropagation(); onDashboard(); }}>
+                    📊 Dashboard complet →
+                </button>
+            )}
         </div>
     );
 }

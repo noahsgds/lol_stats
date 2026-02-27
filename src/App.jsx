@@ -58,8 +58,11 @@ export default function App() {
             } catch { } finally { clearTimeout(t); }
 
             setSoloSyncMsg('Chargement des données…');
-            const d = await fetchAll(tag, q);
-            const rankSolo = syncResult.rank || d.rank || {};
+            const [d, rankFromServer] = await Promise.all([
+                fetchAll(tag, q),
+                fetch(`${API_BASE}/rank?riotId=${encodeURIComponent(tag)}`).then(r => r.ok ? r.json() : {}).catch(() => ({})),
+            ]);
+            const rankSolo = syncResult.rank || rankFromServer || d.rank || {};
             setSoloData({ ...d, rank: rankSolo, rawTag: tag });
             showToast(syncResult.added > 0 ? `✅ ${syncResult.added} nouveau(x) match(s) ajouté(s)` : '✅ Données à jour');
         } catch (e) {
@@ -133,6 +136,7 @@ export default function App() {
                     loading={mode === 'compare' ? loading : soloLoading}
                     onAnalyze={mode === 'compare' ? analyze : analyzeSolo}
                     mode={mode} setMode={setMode}
+                    onHome={() => { setSoloData(null); setMode('solo'); }}
                 />
 
                 {soloData?.rawTag && mode === 'solo' && <LiveBanner riotId={soloData.rawTag} />}

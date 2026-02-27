@@ -1,7 +1,7 @@
-export default function TopBar({ p1Input, setP1Input, p2Input, setP2Input, queue, setQueue, loading, onAnalyze, mode, setMode }) {
+export default function TopBar({ p1Input, setP1Input, p2Input, setP2Input, queue, setQueue, loading, onAnalyze, mode, setMode, onHome }) {
     return (
         <div className="topbar">
-            <div className="logo">
+            <div className="logo" onClick={onHome} style={{ cursor: onHome ? 'pointer' : 'default' }} title="Accueil">
                 <div className="logo-mark">⚔</div>
                 <div className="logo-name">LoL <span>Mate</span></div>
                 <div className="logo-ver">COMPARATOR V22</div>
