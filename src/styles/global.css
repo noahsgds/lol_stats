@@ -929,7 +929,7 @@ select option { background: #1a1610; }
 }
 
 /* Inline dashboard panel (Stats mode) */
-.db-inline { width: 100%; }
+.db-inline { width: 100%; margin-top: 6px; }
 .db-inline .db-panel {
     width: 100%;
     height: auto;
@@ -939,7 +939,8 @@ select option { background: #1a1610; }
     border-radius: 8px;
     animation: fadeUp 0.3s ease both;
 }
-.db-inline .db-overview { padding-top: 10px; padding-bottom: 10px; }
+.db-inline .db-overview { padding: 10px 16px; }
+.db-inline .db-stat-card { padding: 8px 10px; }
 
 /* ══════════════════════════════════════
    TOAST
@@ -2357,7 +2358,7 @@ select option { background: #1a1610; }
 /* ══════════════════════════════════════
    SOLO RESULTS - profil héro
 ══════════════════════════════════════ */
-.solo-results { display: flex; flex-direction: column; gap: 10px; }
+/* solo-results layout defined in SOLO RESULTS LAYOUT section below */
 .solo-hero-card {
     background: var(--card); border: 1px solid var(--border-hi);
     border-radius: 16px; overflow: hidden;
@@ -2562,11 +2563,17 @@ select option { background: #1a1610; }
 /* ══════════════════════════════════════
    SOLO RESULTS LAYOUT - profil + stats
 ══════════════════════════════════════ */
-.solo-top-section {
-    display: grid; grid-template-columns: 1fr 1.4fr; gap: 18px;
+.solo-results {
+    display: grid;
+    grid-template-columns: minmax(320px, 1.1fr) 1.6fr;
+    gap: 14px;
     align-items: start;
 }
-@media (max-width: 900px) { .solo-top-section { grid-template-columns: 1fr; } }
+.solo-left-col  { display: flex; flex-direction: column; gap: 0; }
+.solo-history-col { overflow: hidden; }
+@media (max-width: 900px) {
+    .solo-results { grid-template-columns: 1fr; }
+}
 
 /* ══════════════════════════════════════
    COACH REPORT IMPROVEMENTS

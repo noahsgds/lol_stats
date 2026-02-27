@@ -107,9 +107,11 @@ export default function App() {
             const [s1, s2] = await Promise.all([syncOne(p1), syncOne(p2)]);
 
             setSyncMsg('Chargement des données…');
-            const [d1, d2] = await Promise.all([fetchAll(p1, q), fetchAll(p2, q)]);
-            const rank1 = s1.rank || d1.rank || {};
-            const rank2 = s2.rank || d2.rank || {};
+            const fetchRank = (tag) =>
+                fetch(`${API_BASE}/rank?riotId=${encodeURIComponent(tag)}`).then(r => r.ok ? r.json() : null).catch(() => null);
+            const [d1, d2, r1, r2] = await Promise.all([fetchAll(p1, q), fetchAll(p2, q), fetchRank(p1), fetchRank(p2)]);
+            const rank1 = s1.rank || (r1?.riot_id ? r1 : null) || d1.rank || {};
+            const rank2 = s2.rank || (r2?.riot_id ? r2 : null) || d2.rank || {};
             setPlayersData({ p1: { ...d1, rank: rank1, rawTag: p1 }, p2: { ...d2, rank: rank2, rawTag: p2 } });
 
             const failed = s1.failed || s2.failed;
@@ -157,16 +159,16 @@ export default function App() {
                         </div>
                     ) : soloData ? (
                         <div className="solo-results">
-                            <div className="solo-top-section">
+                            <div className="solo-left-col">
                                 <div className="card solo-hero-card" style={{ overflow: 'hidden' }}>
                                     <ProfileCard data={soloData} isP2={false} onDashboard={null} variant="hero" />
                                 </div>
-                                <div className="card">
-                                    <div className="card-head"><div className="ch-bar ch-p1" />Historique récent</div>
-                                    <MatchHistory history={soloData?.history} loading={false} trackedTag={soloData?.rawTag} lpMap={soloLpMap} />
-                                </div>
+                                <PlayerDashboard data={soloData} pid="p1" onClose={() => setSoloData(null)} inline lpMap={soloLpMap} showHeader={false} />
                             </div>
-                            <PlayerDashboard data={soloData} pid="p1" onClose={() => setSoloData(null)} inline lpMap={soloLpMap} showHeader={false} />
+                            <div className="card solo-history-col">
+                                <div className="card-head"><div className="ch-bar ch-p1" />Historique récent</div>
+                                <MatchHistory history={soloData?.history} loading={false} trackedTag={soloData?.rawTag} lpMap={soloLpMap} />
+                            </div>
                         </div>
                     ) : (
                         <LandingHero soloInput={soloInput} setSoloInput={setSoloInput} queue={queue} setQueue={setQueue} loading={soloLoading} onAnalyze={analyzeSolo} />
