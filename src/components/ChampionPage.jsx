@@ -266,6 +266,8 @@ function ProBuildTab({ champName }) {
                     <div className="chp-sync-label">
                         {syncing
                             ? `Synchronisation… ${syncState?.progress ?? 0}/${syncState?.total ?? '?'} joueurs · +${syncState?.matchesAdded ?? 0} matchs`
+                            : syncState?.lastError
+                            ? `⚠️ ${syncState.lastError}`
                             : syncState?.lastRun
                             ? `Dernier sync : ${new Date(syncState.lastRun).toLocaleString('fr-FR')} · ${syncState.playersUpserted ?? 0} joueurs · ${syncState.matchesAdded ?? 0} matchs`
                             : 'Sync les Challengers pour remplir les pro builds'}

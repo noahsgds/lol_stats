@@ -561,9 +561,20 @@ app.get('/champion-probuilds', async (req, res) => {
 });
 
 // ─── SYNC CHALLENGERS (job de fond) ───────────────────────
-let challSyncState = { running: false, total: 0, progress: 0, matchesAdded: 0, playersUpserted: 0, errors: 0, lastRun: null };
+let challSyncState = { running: false, total: 0, progress: 0, matchesAdded: 0, playersUpserted: 0, errors: 0, lastRun: null, lastError: null };
 
 app.get('/sync-challengers/status', (req, res) => res.json(challSyncState));
+
+// Debug: retourne le raw de l'API Challenger pour diagnostiquer
+app.get('/sync-challengers/test', async (req, res) => {
+    try {
+        const { data } = await getRiot(`${PLATFORM_HOST}/lol/league/v4/challengerleagues/by-queue/RANKED_SOLO_5x5`);
+        const sample = (data.entries || []).slice(0, 3);
+        res.json({ tier: data.tier, total: (data.entries || []).length, sample });
+    } catch (err) {
+        res.status(500).json({ error: err.message, status: err.response?.status });
+    }
+});
 
 app.post('/sync-challengers', async (req, res) => {
     if (challSyncState.running)
@@ -572,7 +583,7 @@ app.post('/sync-challengers', async (req, res) => {
     res.json({ ok: true, message: 'Sync challengers démarré en arrière-plan' });
 
     (async () => {
-        challSyncState = { running: true, total: 0, progress: 0, matchesAdded: 0, playersUpserted: 0, errors: 0, lastRun: new Date().toISOString() };
+        challSyncState = { running: true, total: 0, progress: 0, matchesAdded: 0, playersUpserted: 0, errors: 0, lastRun: new Date().toISOString(), lastError: null };
         try {
             console.log('🏆 Sync challengers démarré...');
 
@@ -585,13 +596,24 @@ app.post('/sync-challengers', async (req, res) => {
             for (const { ep, tier } of tiers) {
                 try {
                     const { data } = await getRiot(`${PLATFORM_HOST}/lol/league/v4/${ep}/by-queue/RANKED_SOLO_5x5`);
-                    for (const e of (data.entries || []))
+                    const entries = data.entries || [];
+                    console.log(`   ${ep}: ${entries.length} entrées, sample puuid=${entries[0]?.puuid}, summonerId=${entries[0]?.summonerId}`);
+                    for (const e of entries)
                         allEntries.push({ ...e, tier, lp: e.leaguePoints });
-                } catch (e) { console.warn(`Fetch ${ep} failed: ${e.message}`); }
+                } catch (e) {
+                    challSyncState.lastError = `${ep}: ${e.message}`;
+                    console.warn(`Fetch ${ep} failed: ${e.message}`);
+                }
                 await sleep(300);
             }
             challSyncState.total = allEntries.length;
             console.log(`   ${allEntries.length} joueurs à synchroniser`);
+
+            if (allEntries.length === 0) {
+                challSyncState.lastError = challSyncState.lastError || 'Aucun joueur retourné par le ladder Riot';
+                challSyncState.running = false;
+                return;
+            }
 
             // 2. Process in batches of 3 (rate-limit safe)
             for (let i = 0; i < allEntries.length; i += 3) {
@@ -600,24 +622,42 @@ app.post('/sync-challengers', async (req, res) => {
 
                 await Promise.all(batch.map(async entry => {
                     try {
-                        // a. summonerId → PUUID + icon
-                        const sumRes = await getRiot(`${PLATFORM_HOST}/lol/summoner/v4/summoners/${entry.summonerId}`);
-                        const sum = sumRes.data;
-                        await sleep(80);
+                        // a. Resolve PUUID
+                        // Since Nov 2023 Riot includes 'puuid' directly in league entries
+                        let puuid = entry.puuid;
+                        let profileIconId = null;
+                        let summonerLevel = null;
+
+                        if (!puuid) {
+                            // Fallback: lookup via summonerId
+                            const sumRes = await getRiot(`${PLATFORM_HOST}/lol/summoner/v4/summoners/${entry.summonerId}`);
+                            puuid = sumRes.data.puuid;
+                            profileIconId = sumRes.data.profileIconId;
+                            summonerLevel  = sumRes.data.summonerLevel;
+                            await sleep(80);
+                        } else {
+                            // Get summoner info via PUUID (for icon + level)
+                            try {
+                                const sumRes = await getRiot(`${PLATFORM_HOST}/lol/summoner/v4/summoners/by-puuid/${puuid}`);
+                                profileIconId = sumRes.data.profileIconId;
+                                summonerLevel  = sumRes.data.summonerLevel;
+                                await sleep(60);
+                            } catch { /* icon not critical */ }
+                        }
 
                         // b. PUUID → Riot ID (gameName#tagLine)
-                        const accRes = await getRiot(`${REGION_HOST}/riot/account/v1/accounts/by-puuid/${sum.puuid}`);
+                        const accRes = await getRiot(`${REGION_HOST}/riot/account/v1/accounts/by-puuid/${puuid}`);
                         const riotId = `${accRes.data.gameName}#${accRes.data.tagLine}`;
                         await sleep(80);
 
                         // c. Upsert rank (preserve existing rank_history)
-                        const { data: existing } = await supabase.from('player_ranks').select('rank_history').eq('puuid', sum.puuid).maybeSingle();
+                        const { data: existing } = await supabase.from('player_ranks').select('rank_history').eq('puuid', puuid).maybeSingle();
                         await supabase.from('player_ranks').upsert({
-                            puuid: sum.puuid,
+                            puuid,
                             riot_id: riotId,
-                            summoner_id: entry.summonerId,
-                            profile_icon_id: sum.profileIconId,
-                            summoner_level: sum.summonerLevel,
+                            summoner_id: entry.summonerId || null,
+                            profile_icon_id: profileIconId,
+                            summoner_level: summonerLevel,
                             solo_tier: entry.tier,
                             solo_rank: null,
                             solo_lp: entry.lp,
@@ -629,7 +669,7 @@ app.post('/sync-challengers', async (req, res) => {
                         challSyncState.playersUpserted++;
 
                         // d. Fetch match IDs
-                        const matchIdsRes = await getRiot(`${REGION_HOST}/lol/match/v5/matches/by-puuid/${sum.puuid}/ids?start=0&count=20`);
+                        const matchIdsRes = await getRiot(`${REGION_HOST}/lol/match/v5/matches/by-puuid/${puuid}/ids?start=0&count=20`);
                         const matchIds = matchIdsRes.data || [];
                         await sleep(80);
 
@@ -650,7 +690,9 @@ app.post('/sync-challengers', async (req, res) => {
                         }
                     } catch (e) {
                         challSyncState.errors++;
-                        console.warn(`  Skip ${entry.summonerId}: ${e.message?.slice(0, 60)}`);
+                        const msg = `Skip ${entry.puuid || entry.summonerId}: ${e.message?.slice(0, 80)}`;
+                        challSyncState.lastError = msg;
+                        console.warn(' ', msg);
                     }
                 }));
 
@@ -663,6 +705,7 @@ app.post('/sync-challengers', async (req, res) => {
             challSyncState.lastRun  = new Date().toISOString();
             console.log(`✅ Sync challengers terminé : ${challSyncState.playersUpserted} joueurs, +${challSyncState.matchesAdded} matchs`);
         } catch (e) {
+            challSyncState.lastError = e.message;
             console.error('Sync challengers error:', e.message);
         } finally {
             challSyncState.running = false;
