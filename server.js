@@ -493,56 +493,181 @@ app.get('/champion-stats', async (req, res) => {
 });
 
 // ─── CHAMPION PROBUILDS (parties récentes de joueurs hauts ELO) ─
+const TIER_ORDER = { CHALLENGER: 0, GRANDMASTER: 1, MASTER: 2, DIAMOND: 3, EMERALD: 4, PLATINUM: 5, GOLD: 6, SILVER: 7, BRONZE: 8, IRON: 9 };
+
 app.get('/champion-probuilds', async (req, res) => {
     try {
         const champ = req.query.champ;
         if (!champ) return res.status(400).json({ error: 'champ requis' });
 
-        // Chercher les matchs de ce champion depuis notre base
+        // Scan the last 500 matches for this champion
         const { data: rows, error } = await supabase
             .from('bronze_matches')
             .select('match_data')
             .filter('match_data::text', 'ilike', `%"championName":"${champ}"%`)
             .order('match_id', { ascending: false })
-            .limit(50);
+            .limit(500);
 
         if (error || !rows?.length) return res.json({ games: [] });
 
-        const games = [];
+        // Collect all (puuid, participant) pairs for this champion
+        const entries = [];
         for (const row of rows) {
             const info = row.match_data?.info;
             if (!info) continue;
-            const ps = info.participants || [];
-            const p = ps.find(x => x.championName === champ);
-            if (!p) continue;
+            const p = (info.participants || []).find(x => x.championName === champ);
+            if (p) entries.push({ p, info });
+            if (entries.length >= 50) break;
+        }
 
-            // Chercher le rang du joueur dans notre table
-            const { data: rankRow } = await supabase
-                .from('player_ranks')
-                .select('riot_id, solo_tier, solo_rank')
-                .eq('puuid', p.puuid)
-                .maybeSingle();
+        // Batch-fetch all ranks at once
+        const puuids = [...new Set(entries.map(e => e.p.puuid))];
+        const { data: rankRows } = await supabase
+            .from('player_ranks')
+            .select('puuid, riot_id, solo_tier, solo_rank, solo_lp')
+            .in('puuid', puuids);
+        const rankMap = {};
+        for (const r of (rankRows || [])) rankMap[r.puuid] = r;
 
-            games.push({
-                playerName: rankRow?.riot_id?.split('#')[0] || p.riotIdGameName || p.summonerName || 'Inconnu',
-                tier: rankRow?.solo_tier || null,
-                rank: rankRow?.solo_rank || null,
+        const games = entries.map(({ p, info }) => {
+            const r = rankMap[p.puuid];
+            return {
+                playerName: r?.riot_id?.split('#')[0] || p.riotIdGameName || p.summonerName || 'Inconnu',
+                riotId: r?.riot_id || null,
+                tier: r?.solo_tier || null,
+                rank: r?.solo_rank || null,
+                lp: r?.solo_lp ?? null,
                 win: p.win,
                 kills: p.kills, deaths: p.deaths, assists: p.assists,
                 item0: p.item0, item1: p.item1, item2: p.item2,
                 item3: p.item3, item4: p.item4, item5: p.item5,
+                summoner1Id: p.summoner1Id, summoner2Id: p.summoner2Id,
                 gameDate: info.gameEndTimestamp
                     ? new Date(info.gameEndTimestamp).toLocaleDateString('fr-FR')
                     : '—',
-            });
-            if (games.length >= 15) break;
-        }
+                _tierOrder: TIER_ORDER[r?.solo_tier] ?? 99,
+            };
+        });
 
-        res.json({ games });
+        // Sort: high elo first, then unranked
+        games.sort((a, b) => a._tierOrder - b._tierOrder);
+        games.forEach(g => delete g._tierOrder);
+
+        res.json({ games: games.slice(0, 30) });
     } catch (err) {
         console.error('Probuilds error:', err.message);
         res.status(500).json({ error: err.message });
     }
+});
+
+// ─── SYNC CHALLENGERS (job de fond) ───────────────────────
+let challSyncState = { running: false, total: 0, progress: 0, matchesAdded: 0, playersUpserted: 0, errors: 0, lastRun: null };
+
+app.get('/sync-challengers/status', (req, res) => res.json(challSyncState));
+
+app.post('/sync-challengers', async (req, res) => {
+    if (challSyncState.running)
+        return res.json({ ok: false, message: 'Sync déjà en cours', ...challSyncState });
+
+    res.json({ ok: true, message: 'Sync challengers démarré en arrière-plan' });
+
+    (async () => {
+        challSyncState = { running: true, total: 0, progress: 0, matchesAdded: 0, playersUpserted: 0, errors: 0, lastRun: new Date().toISOString() };
+        try {
+            console.log('🏆 Sync challengers démarré...');
+
+            // 1. Fetch Challenger + Grandmaster lists
+            const tiers = [
+                { ep: 'challengerleagues',  tier: 'CHALLENGER' },
+                { ep: 'grandmasterleagues', tier: 'GRANDMASTER' },
+            ];
+            const allEntries = [];
+            for (const { ep, tier } of tiers) {
+                try {
+                    const { data } = await getRiot(`${PLATFORM_HOST}/lol/league/v4/${ep}/by-queue/RANKED_SOLO_5x5`);
+                    for (const e of (data.entries || []))
+                        allEntries.push({ ...e, tier, lp: e.leaguePoints });
+                } catch (e) { console.warn(`Fetch ${ep} failed: ${e.message}`); }
+                await sleep(300);
+            }
+            challSyncState.total = allEntries.length;
+            console.log(`   ${allEntries.length} joueurs à synchroniser`);
+
+            // 2. Process in batches of 3 (rate-limit safe)
+            for (let i = 0; i < allEntries.length; i += 3) {
+                challSyncState.progress = i;
+                const batch = allEntries.slice(i, i + 3);
+
+                await Promise.all(batch.map(async entry => {
+                    try {
+                        // a. summonerId → PUUID + icon
+                        const sumRes = await getRiot(`${PLATFORM_HOST}/lol/summoner/v4/summoners/${entry.summonerId}`);
+                        const sum = sumRes.data;
+                        await sleep(80);
+
+                        // b. PUUID → Riot ID (gameName#tagLine)
+                        const accRes = await getRiot(`${REGION_HOST}/riot/account/v1/accounts/by-puuid/${sum.puuid}`);
+                        const riotId = `${accRes.data.gameName}#${accRes.data.tagLine}`;
+                        await sleep(80);
+
+                        // c. Upsert rank (preserve existing rank_history)
+                        const { data: existing } = await supabase.from('player_ranks').select('rank_history').eq('puuid', sum.puuid).maybeSingle();
+                        await supabase.from('player_ranks').upsert({
+                            puuid: sum.puuid,
+                            riot_id: riotId,
+                            summoner_id: entry.summonerId,
+                            profile_icon_id: sum.profileIconId,
+                            summoner_level: sum.summonerLevel,
+                            solo_tier: entry.tier,
+                            solo_rank: null,
+                            solo_lp: entry.lp,
+                            solo_wins: entry.wins,
+                            solo_losses: entry.losses,
+                            rank_history: existing?.rank_history || [],
+                            updated_at: new Date().toISOString(),
+                        }, { onConflict: 'puuid' });
+                        challSyncState.playersUpserted++;
+
+                        // d. Fetch match IDs
+                        const matchIdsRes = await getRiot(`${REGION_HOST}/lol/match/v5/matches/by-puuid/${sum.puuid}/ids?start=0&count=20`);
+                        const matchIds = matchIdsRes.data || [];
+                        await sleep(80);
+
+                        // e. Check which matches we already have
+                        const { data: existingMatches } = await supabase
+                            .from('bronze_matches').select('match_id').in('match_id', matchIds);
+                        const existingSet = new Set((existingMatches || []).map(r => r.match_id));
+                        const newIds = matchIds.filter(id => !existingSet.has(id)).slice(0, 5);
+
+                        // f. Store new matches
+                        for (const matchId of newIds) {
+                            try {
+                                const { data: detail } = await getRiot(`${REGION_HOST}/lol/match/v5/matches/${matchId}`);
+                                const { error } = await supabase.from('bronze_matches').insert({ match_id: matchId, match_data: detail });
+                                if (!error || error.code === '23505') challSyncState.matchesAdded++;
+                                await sleep(150);
+                            } catch { challSyncState.errors++; }
+                        }
+                    } catch (e) {
+                        challSyncState.errors++;
+                        console.warn(`  Skip ${entry.summonerId}: ${e.message?.slice(0, 60)}`);
+                    }
+                }));
+
+                await sleep(400);
+                if (i % 30 === 0)
+                    console.log(`  → ${i}/${challSyncState.total} joueurs | +${challSyncState.matchesAdded} matchs | ${challSyncState.errors} erreurs`);
+            }
+
+            challSyncState.progress = challSyncState.total;
+            challSyncState.lastRun  = new Date().toISOString();
+            console.log(`✅ Sync challengers terminé : ${challSyncState.playersUpserted} joueurs, +${challSyncState.matchesAdded} matchs`);
+        } catch (e) {
+            console.error('Sync challengers error:', e.message);
+        } finally {
+            challSyncState.running = false;
+        }
+    })();
 });
 
 // ─── CHAMPION MATCHUPS (win/loss vs chaque adversaire) ────

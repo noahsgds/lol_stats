@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { D_VER, API_BASE, getChampKey, timeAgo } from '../lib/utils.js';
 
 const DDRAGON = `https://ddragon.leagueoflegends.com/cdn/${D_VER}`;
@@ -34,13 +34,19 @@ async function fetchChampProbuilds(champ) {
     } catch { return []; }
 }
 
-async function fetchChallengerBuilds(champ) {
+async function fetchSyncStatus() {
     try {
-        const res = await fetch(`${API_BASE}/challenger-builds?champ=${encodeURIComponent(champ)}`);
-        if (!res.ok) return [];
-        const json = await res.json();
-        return json.games || [];
-    } catch { return []; }
+        const res = await fetch(`${API_BASE}/sync-challengers/status`);
+        if (!res.ok) return null;
+        return await res.json();
+    } catch { return null; }
+}
+
+async function triggerSync() {
+    try {
+        const res = await fetch(`${API_BASE}/sync-challengers`, { method: 'POST' });
+        return await res.json();
+    } catch { return null; }
 }
 
 async function fetchChampMatchups(champ) {
@@ -166,18 +172,26 @@ function BuildTab({ champKey, champName, detail }) {
 }
 
 const TIER_BADGE = { CHALLENGER: '#f0e68c', GRANDMASTER: '#e84d00', MASTER: '#b24aee', DIAMOND: '#7ad1f5', EMERALD: '#4ade80', PLATINUM: '#5ec4b5' };
+const SPELL_IMG  = id => id ? `${DDRAGON}/img/spell/Summoner${({4:'Flash',11:'Smite',14:'Ignite',21:'Barrier',3:'Exhaust',1:'Cleanse',6:'Ghost',7:'Heal',13:'Clarity',32:'Mark'}[id]||id)}.png` : null;
 
 function ProBuildRow({ g }) {
-    const tierColor = TIER_BADGE[g.tier] || 'var(--text-mid)';
+    const tierColor = TIER_BADGE[g.tier] || 'var(--text-dim)';
+    const tierLabel = g.tier ? `${g.tier}${g.lp != null ? ' · ' + g.lp + ' LP' : ''}` : 'Non classé';
+    const s1 = SPELL_IMG(g.summoner1Id);
+    const s2 = SPELL_IMG(g.summoner2Id);
     return (
         <div className={`chp-pb-row ${g.win ? 'win' : 'loss'}`}>
             <div className={`chp-pb-result ${g.win ? 'win' : 'loss'}`}>{g.win ? 'V' : 'D'}</div>
             <div className="chp-pb-player">
                 <div className="chp-pb-name">{g.playerName}</div>
-                <div className="chp-pb-rank" style={{ color: tierColor }}>
-                    {g.tier ? `${g.tier}${g.rank ? ' ' + g.rank : ''}${g.lp != null ? ' · ' + g.lp + 'LP' : ''}` : 'Rang inconnu'}
-                </div>
+                <div className="chp-pb-rank" style={{ color: tierColor }}>{tierLabel}</div>
             </div>
+            {(s1 || s2) && (
+                <div className="chp-pb-spells">
+                    {s1 && <img src={s1} alt="" onError={e => { e.target.style.display = 'none'; }} />}
+                    {s2 && <img src={s2} alt="" onError={e => { e.target.style.display = 'none'; }} />}
+                </div>
+            )}
             <div className="chp-pb-kda">{g.kills}/{g.deaths}/{g.assists}</div>
             <div className="chp-pb-items">
                 {[g.item0, g.item1, g.item2, g.item3, g.item4, g.item5].filter(Boolean).map((id, j) => (
@@ -194,66 +208,102 @@ function ProBuildRow({ g }) {
 
 /* ── ProBuildTab ── */
 function ProBuildTab({ champName }) {
-    const [dbGames, setDbGames] = useState(null);
-    const [challGames, setChallGames] = useState(null);
-    const [loadingDb, setLoadingDb] = useState(true);
-    const [loadingChall, setLoadingChall] = useState(true);
+    const [games, setGames]       = useState(null);
+    const [loading, setLoading]   = useState(true);
+    const [syncState, setSyncState] = useState(null);
+    const [syncing, setSyncing]   = useState(false);
+    const pollRef = useRef(null);
 
+    // Load DB builds
     useEffect(() => {
-        setLoadingDb(true);
-        setLoadingChall(true);
-        setDbGames(null);
-        setChallGames(null);
-        fetchChampProbuilds(champName).then(g => { setDbGames(g); setLoadingDb(false); });
-        fetchChallengerBuilds(champName).then(g => { setChallGames(g); setLoadingChall(false); });
+        setLoading(true);
+        setGames(null);
+        fetchChampProbuilds(champName).then(g => { setGames(g); setLoading(false); });
     }, [champName]);
 
-    const hasChall = challGames?.length > 0;
-    const hasDb    = dbGames?.length > 0;
-    const allDone  = !loadingDb && !loadingChall;
+    // Poll sync status while running
+    useEffect(() => {
+        if (!syncing) return;
+        pollRef.current = setInterval(async () => {
+            const s = await fetchSyncStatus();
+            if (s) setSyncState(s);
+            if (s && !s.running) {
+                setSyncing(false);
+                clearInterval(pollRef.current);
+                // Reload builds after sync
+                setLoading(true);
+                fetchChampProbuilds(champName).then(g => { setGames(g); setLoading(false); });
+            }
+        }, 2000);
+        return () => clearInterval(pollRef.current);
+    }, [syncing, champName]);
+
+    const handleSync = async () => {
+        setSyncing(true);
+        const s = await triggerSync();
+        if (s) setSyncState(s);
+        // Start polling
+        const poll = setInterval(async () => {
+            const st = await fetchSyncStatus();
+            if (st) setSyncState(st);
+            if (st && !st.running) {
+                setSyncing(false);
+                clearInterval(poll);
+                setLoading(true);
+                fetchChampProbuilds(champName).then(g => { setGames(g); setLoading(false); });
+            }
+        }, 2000);
+        pollRef.current = poll;
+    };
+
+    const pct = syncState?.total > 0 ? Math.round(syncState.progress / syncState.total * 100) : 0;
 
     return (
         <div className="chp-probuild-list">
-            {/* Challenger section */}
+            {/* Sync control */}
+            <div className="chp-sync-bar">
+                <div className="chp-sync-left">
+                    <div className="chp-sync-label">
+                        {syncing
+                            ? `Synchronisation… ${syncState?.progress ?? 0}/${syncState?.total ?? '?'} joueurs · +${syncState?.matchesAdded ?? 0} matchs`
+                            : syncState?.lastRun
+                            ? `Dernier sync : ${new Date(syncState.lastRun).toLocaleString('fr-FR')} · ${syncState.playersUpserted ?? 0} joueurs · ${syncState.matchesAdded ?? 0} matchs`
+                            : 'Sync les Challengers pour remplir les pro builds'}
+                    </div>
+                    {syncing && (
+                        <div className="chp-sync-progress-bar">
+                            <div className="chp-sync-progress-fill" style={{ width: `${pct}%` }} />
+                        </div>
+                    )}
+                </div>
+                <button
+                    className="chp-sync-btn"
+                    onClick={handleSync}
+                    disabled={syncing}
+                >
+                    {syncing ? '⏳ En cours…' : '🏆 Sync Challengers'}
+                </button>
+            </div>
+
+            {/* Builds list */}
             <div className="chp-matchup-section">
                 <div className="chp-matchup-section-title" style={{ color: '#f0e68c' }}>
-                    👑 Parties Challenger en direct
+                    👑 Builds High ELO · {games?.length ?? 0} parties
                 </div>
-                {loadingChall ? (
-                    <div className="chp-pb-loading" style={{ padding: '14px 0' }}>
-                        Récupération des builds Challenger… (peut prendre 20–40s)
-                    </div>
-                ) : hasChall ? (
-                    challGames.map((g, i) => <ProBuildRow key={i} g={g} />)
+                {loading ? (
+                    <div className="chp-pb-loading">Chargement des builds…</div>
+                ) : games?.length > 0 ? (
+                    games.map((g, i) => <ProBuildRow key={i} g={g} />)
                 ) : (
-                    <div style={{ color: 'var(--text-dim)', fontSize: 13, padding: '8px 0' }}>
-                        Aucun Challenger trouvé pour ce champion (essaie un champion très joué).
+                    <div className="chp-pb-loading">
+                        <div style={{ fontSize: 24, marginBottom: 8 }}>📭</div>
+                        Aucune partie dans la base pour {champName}.<br />
+                        <span style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 6, display: 'block' }}>
+                            Lance le sync Challengers pour pré-remplir les données.
+                        </span>
                     </div>
                 )}
             </div>
-
-            {/* DB section */}
-            <div className="chp-matchup-section" style={{ marginTop: 24 }}>
-                <div className="chp-matchup-section-title">
-                    🗄 Parties dans notre base de données
-                </div>
-                {loadingDb ? (
-                    <div className="chp-pb-loading" style={{ padding: '14px 0' }}>Chargement…</div>
-                ) : hasDb ? (
-                    dbGames.map((g, i) => <ProBuildRow key={i} g={g} />)
-                ) : (
-                    <div style={{ color: 'var(--text-dim)', fontSize: 13, padding: '8px 0' }}>
-                        Aucune partie dans notre base. Lance une analyse pour enrichir les données.
-                    </div>
-                )}
-            </div>
-
-            {allDone && !hasChall && !hasDb && (
-                <div className="chp-pb-loading">
-                    <div style={{ fontSize: 24, marginBottom: 8 }}>📭</div>
-                    Aucune donnée disponible pour {champName}.
-                </div>
-            )}
         </div>
     );
 }
