@@ -492,6 +492,35 @@ app.get('/champion-stats', async (req, res) => {
     }
 });
 
+// ─── CHAMPION ALL STATS (bulk WR + games par champion pour la grille) ──
+app.get('/champion-all-stats', async (req, res) => {
+    try {
+        const { data: rows } = await supabase
+            .from('bronze_matches')
+            .select('match_data')
+            .order('match_id', { ascending: false })
+            .limit(500);
+
+        const stats = {};
+        for (const row of (rows || [])) {
+            const parts = row.match_data?.info?.participants || [];
+            for (const p of parts) {
+                const c = p.championName;
+                if (!c) continue;
+                if (!stats[c]) stats[c] = { games: 0, wins: 0 };
+                stats[c].games++;
+                if (p.win) stats[c].wins++;
+            }
+        }
+        const result = Object.entries(stats)
+            .map(([champ, s]) => ({ champ, games: s.games, wr: Math.round(s.wins / s.games * 100) }))
+            .sort((a, b) => b.games - a.games);
+        res.json({ stats: result });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ─── CHAMPION PROBUILDS (parties récentes de joueurs hauts ELO) ─
 const TIER_ORDER = { CHALLENGER: 0, GRANDMASTER: 1, MASTER: 2, DIAMOND: 3, EMERALD: 4, PLATINUM: 5, GOLD: 6, SILVER: 7, BRONZE: 8, IRON: 9 };
 

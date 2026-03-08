@@ -3,7 +3,7 @@ import { D_VER, API_BASE, getChampKey, timeAgo } from '../lib/utils.js';
 
 const DDRAGON = `https://ddragon.leagueoflegends.com/cdn/${D_VER}`;
 
-/* ── Fetch champion list from Data Dragon ── */
+/* ── DDragon fetches ── */
 async function fetchChampionList() {
     const res = await fetch(`${DDRAGON}/data/fr_FR/champion.json`);
     const json = await res.json();
@@ -16,18 +16,18 @@ async function fetchChampionDetail(key) {
     return Object.values(json.data)[0];
 }
 
-/* ── Fetch our own DB stats ── */
-async function fetchChampStats(champ) {
+/* ── API calls — use champKey (DDragon id) not display name ── */
+async function fetchChampStats(champKey) {
     try {
-        const res = await fetch(`${API_BASE}/champion-stats?champ=${encodeURIComponent(champ)}`);
+        const res = await fetch(`${API_BASE}/champion-stats?champ=${encodeURIComponent(champKey)}`);
         if (!res.ok) return null;
         return await res.json();
     } catch { return null; }
 }
 
-async function fetchChampProbuilds(champ) {
+async function fetchChampProbuilds(champKey) {
     try {
-        const res = await fetch(`${API_BASE}/champion-probuilds?champ=${encodeURIComponent(champ)}`);
+        const res = await fetch(`${API_BASE}/champion-probuilds?champ=${encodeURIComponent(champKey)}`);
         if (!res.ok) return [];
         const json = await res.json();
         return json.games || [];
@@ -49,13 +49,24 @@ async function triggerSync() {
     } catch { return null; }
 }
 
-async function fetchChampMatchups(champ) {
+async function fetchChampMatchups(champKey) {
     try {
-        const res = await fetch(`${API_BASE}/champion-matchups?champ=${encodeURIComponent(champ)}`);
+        const res = await fetch(`${API_BASE}/champion-matchups?champ=${encodeURIComponent(champKey)}`);
         if (!res.ok) return [];
         const json = await res.json();
         return json.matchups || [];
     } catch { return []; }
+}
+
+async function fetchAllChampStats() {
+    try {
+        const res = await fetch(`${API_BASE}/champion-all-stats`);
+        if (!res.ok) return {};
+        const json = await res.json();
+        const map = {};
+        for (const s of (json.stats || [])) map[s.champ] = s;
+        return map;
+    } catch { return {}; }
 }
 
 /* ── BuildTab ── */
@@ -65,10 +76,9 @@ function BuildTab({ champKey, champName, detail }) {
 
     useEffect(() => {
         setLoading(true);
-        fetchChampStats(champName).then(d => { setStats(d); setLoading(false); });
-    }, [champName]);
+        fetchChampStats(champKey).then(d => { setStats(d); setLoading(false); });
+    }, [champKey]);
 
-    // Data Dragon recommended build as fallback
     const ddRec = detail?.recommended?.[0];
     const ddItems = ddRec?.blocks?.[0]?.items?.slice(0, 6) || [];
 
@@ -85,18 +95,14 @@ function BuildTab({ champKey, champName, detail }) {
                     : 'Build recommandé Data Dragon (données DB insuffisantes)'}
             </div>
             <div className="chp-build-grid">
-                {/* Items les plus joués */}
                 <div className="chp-build-section">
                     <div className="chp-build-section-title">Items les plus joués</div>
                     {items ? items.slice(0, 6).map((item, i) => (
                         <div key={item.id} className="chp-item-row">
                             <div className="chp-item-rank">#{i + 1}</div>
                             <div className="chp-item-icon-lg">
-                                <img
-                                    src={`${DDRAGON}/img/item/${item.id}.png`}
-                                    alt={item.name}
-                                    onError={e => { e.target.onerror = null; e.target.style.opacity = '.2'; }}
-                                />
+                                <img src={`${DDRAGON}/img/item/${item.id}.png`} alt={item.name}
+                                    onError={e => { e.target.onerror = null; e.target.style.opacity = '.2'; }} />
                             </div>
                             <div className="chp-item-info">
                                 <div className="chp-item-name-txt">{item.name}</div>
@@ -112,11 +118,8 @@ function BuildTab({ champKey, champName, detail }) {
                         <div key={item.id + i} className="chp-item-row">
                             <div className="chp-item-rank">#{i + 1}</div>
                             <div className="chp-item-icon-lg">
-                                <img
-                                    src={`${DDRAGON}/img/item/${item.id}.png`}
-                                    alt=""
-                                    onError={e => { e.target.onerror = null; e.target.style.opacity = '.2'; }}
-                                />
+                                <img src={`${DDRAGON}/img/item/${item.id}.png`} alt=""
+                                    onError={e => { e.target.onerror = null; e.target.style.opacity = '.2'; }} />
                             </div>
                             <div className="chp-item-info">
                                 <div className="chp-item-name-txt">Item #{item.id}</div>
@@ -126,7 +129,6 @@ function BuildTab({ champKey, champName, detail }) {
                     )) : <div style={{ color: 'var(--text-dim)', fontSize: 13, padding: '12px 0' }}>Aucune donnée d'item disponible.</div>}
                 </div>
 
-                {/* Sorts & Stats globales */}
                 <div className="chp-build-section">
                     <div className="chp-build-section-title">Sorts d'invocateur les plus joués</div>
                     {stats?.topSpells?.length > 0 ? stats.topSpells.map((sp, i) => (
@@ -207,21 +209,19 @@ function ProBuildRow({ g }) {
 }
 
 /* ── ProBuildTab ── */
-function ProBuildTab({ champName }) {
-    const [games, setGames]       = useState(null);
-    const [loading, setLoading]   = useState(true);
+function ProBuildTab({ champKey, champName }) {
+    const [games, setGames]         = useState(null);
+    const [loading, setLoading]     = useState(true);
     const [syncState, setSyncState] = useState(null);
-    const [syncing, setSyncing]   = useState(false);
+    const [syncing, setSyncing]     = useState(false);
     const pollRef = useRef(null);
 
-    // Load DB builds
     useEffect(() => {
         setLoading(true);
         setGames(null);
-        fetchChampProbuilds(champName).then(g => { setGames(g); setLoading(false); });
-    }, [champName]);
+        fetchChampProbuilds(champKey).then(g => { setGames(g); setLoading(false); });
+    }, [champKey]);
 
-    // Poll sync status while running
     useEffect(() => {
         if (!syncing) return;
         pollRef.current = setInterval(async () => {
@@ -230,19 +230,17 @@ function ProBuildTab({ champName }) {
             if (s && !s.running) {
                 setSyncing(false);
                 clearInterval(pollRef.current);
-                // Reload builds after sync
                 setLoading(true);
-                fetchChampProbuilds(champName).then(g => { setGames(g); setLoading(false); });
+                fetchChampProbuilds(champKey).then(g => { setGames(g); setLoading(false); });
             }
         }, 2000);
         return () => clearInterval(pollRef.current);
-    }, [syncing, champName]);
+    }, [syncing, champKey]);
 
     const handleSync = async () => {
         setSyncing(true);
         const s = await triggerSync();
         if (s) setSyncState(s);
-        // Start polling
         const poll = setInterval(async () => {
             const st = await fetchSyncStatus();
             if (st) setSyncState(st);
@@ -250,7 +248,7 @@ function ProBuildTab({ champName }) {
                 setSyncing(false);
                 clearInterval(poll);
                 setLoading(true);
-                fetchChampProbuilds(champName).then(g => { setGames(g); setLoading(false); });
+                fetchChampProbuilds(champKey).then(g => { setGames(g); setLoading(false); });
             }
         }, 2000);
         pollRef.current = poll;
@@ -260,7 +258,6 @@ function ProBuildTab({ champName }) {
 
     return (
         <div className="chp-probuild-list">
-            {/* Sync control */}
             <div className="chp-sync-bar">
                 <div className="chp-sync-left">
                     <div className="chp-sync-label">
@@ -278,16 +275,11 @@ function ProBuildTab({ champName }) {
                         </div>
                     )}
                 </div>
-                <button
-                    className="chp-sync-btn"
-                    onClick={handleSync}
-                    disabled={syncing}
-                >
+                <button className="chp-sync-btn" onClick={handleSync} disabled={syncing}>
                     {syncing ? '⏳ En cours…' : '🏆 Sync Challengers'}
                 </button>
             </div>
 
-            {/* Builds list */}
             <div className="chp-matchup-section">
                 <div className="chp-matchup-section-title" style={{ color: '#f0e68c' }}>
                     👑 Builds High ELO · {games?.length ?? 0} parties
@@ -311,14 +303,14 @@ function ProBuildTab({ champName }) {
 }
 
 /* ── MatchupTab ── */
-function MatchupTab({ champName }) {
+function MatchupTab({ champKey, champName }) {
     const [matchups, setMatchups] = useState(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         setLoading(true);
-        fetchChampMatchups(champName).then(m => { setMatchups(m); setLoading(false); });
-    }, [champName]);
+        fetchChampMatchups(champKey).then(m => { setMatchups(m); setLoading(false); });
+    }, [champKey]);
 
     if (loading) return <div className="chp-pb-loading">Calcul des matchups…</div>;
     if (!matchups?.length) return (
@@ -377,16 +369,32 @@ function MatchupTab({ champName }) {
     );
 }
 
+/* ── Role filters ── */
+const ROLES = [
+    { key: 'all',       label: 'Tous' },
+    { key: 'Fighter',   label: 'Guerrier' },
+    { key: 'Tank',      label: 'Tank' },
+    { key: 'Mage',      label: 'Mage' },
+    { key: 'Assassin',  label: 'Assassin' },
+    { key: 'Marksman',  label: 'Tireur' },
+    { key: 'Support',   label: 'Support' },
+];
+
 /* ── Main ChampionPage ── */
 export default function ChampionPage() {
     const [champions, setChampions] = useState([]);
-    const [search, setSearch] = useState('');
-    const [selected, setSelected] = useState(null);
-    const [detail, setDetail] = useState(null);
-    const [tab, setTab] = useState('build');
+    const [dbStats, setDbStats]     = useState({});
+    const [search, setSearch]       = useState('');
+    const [roleFilter, setRoleFilter] = useState('all');
+    const [sortBy, setSortBy]       = useState('games');
+    const [selected, setSelected]   = useState(null);
+    const [detail, setDetail]       = useState(null);
+    const [tab, setTab]             = useState('build');
 
     useEffect(() => {
-        fetchChampionList().then(setChampions).catch(console.error);
+        Promise.all([fetchChampionList(), fetchAllChampStats()])
+            .then(([champs, statsMap]) => { setChampions(champs); setDbStats(statsMap); })
+            .catch(console.error);
     }, []);
 
     useEffect(() => {
@@ -397,56 +405,100 @@ export default function ChampionPage() {
     }, [selected]);
 
     const filtered = useMemo(() => {
-        if (!search.trim()) return champions;
-        const q = search.toLowerCase();
-        return champions.filter(c => c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q));
-    }, [champions, search]);
+        let list = [...champions];
+        if (search.trim()) {
+            const q = search.toLowerCase();
+            list = list.filter(c => c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q));
+        }
+        if (roleFilter !== 'all') {
+            list = list.filter(c => (c.tags || []).includes(roleFilter));
+        }
+        if (sortBy === 'games') {
+            list.sort((a, b) => (dbStats[b.id]?.games || 0) - (dbStats[a.id]?.games || 0) || a.name.localeCompare(b.name));
+        } else if (sortBy === 'wr') {
+            list.sort((a, b) => {
+                const ag = dbStats[a.id]?.games || 0, bg = dbStats[b.id]?.games || 0;
+                if (!ag && !bg) return a.name.localeCompare(b.name);
+                if (!ag) return 1; if (!bg) return -1;
+                return (dbStats[b.id]?.wr || 0) - (dbStats[a.id]?.wr || 0);
+            });
+        } else {
+            list.sort((a, b) => a.name.localeCompare(b.name));
+        }
+        return list;
+    }, [champions, search, roleFilter, sortBy, dbStats]);
 
     return (
         <div className="chp-wrap">
-            {/* Sidebar */}
-            <div className="chp-sidebar">
-                <div className="chp-search-bar">
-                    <input
-                        type="text"
-                        placeholder="Rechercher un champion…"
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                    />
-                </div>
-                <div className="chp-list">
-                    {filtered.map(c => (
-                        <div
-                            key={c.id}
-                            className={`chp-item ${selected?.id === c.id ? 'active' : ''}`}
-                            onClick={() => setSelected(c)}
+            {/* Controls bar */}
+            <div className="chp-controls">
+                <input
+                    className="chp-main-search"
+                    type="text"
+                    placeholder="🔍 Rechercher un champion…"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                />
+                <div className="chp-role-filters">
+                    {ROLES.map(r => (
+                        <button
+                            key={r.key}
+                            className={`chp-role-btn ${roleFilter === r.key ? 'active' : ''}`}
+                            onClick={() => setRoleFilter(r.key)}
                         >
-                            <div className="chp-item-icon">
-                                <img
-                                    src={`${DDRAGON}/img/champion/${c.id}.png`}
-                                    alt={c.name}
-                                    onError={e => { e.target.onerror = null; e.target.style.opacity = '.2'; }}
-                                />
-                            </div>
-                            <div>
-                                <div className="chp-item-name">{c.name}</div>
-                                <div className="chp-item-title">{c.title}</div>
-                            </div>
-                        </div>
+                            {r.label}
+                        </button>
+                    ))}
+                </div>
+                <div className="chp-sort-tabs">
+                    {[['games', 'Plus joués'], ['wr', 'Meilleur WR'], ['alpha', 'A–Z']].map(([k, l]) => (
+                        <button
+                            key={k}
+                            className={`chp-sort-btn ${sortBy === k ? 'active' : ''}`}
+                            onClick={() => setSortBy(k)}
+                        >
+                            {l}
+                        </button>
                     ))}
                 </div>
             </div>
 
-            {/* Detail panel */}
-            <div className="chp-detail">
-                {!selected ? (
-                    <div className="chp-detail-empty">
-                        <div style={{ fontSize: 40 }}>🗡</div>
-                        Sélectionne un champion pour voir ses stats
+            {/* Main area: grid + detail panel */}
+            <div className="chp-main">
+                <div className="chp-grid-wrap">
+                    <div className="chp-grid">
+                        {filtered.map(c => {
+                            const s = dbStats[c.id];
+                            const isSelected = selected?.id === c.id;
+                            return (
+                                <div
+                                    key={c.id}
+                                    className={`chp-card ${isSelected ? 'active' : ''}`}
+                                    onClick={() => setSelected(isSelected ? null : c)}
+                                >
+                                    <div className="chp-card-img">
+                                        <img
+                                            src={`${DDRAGON}/img/champion/${c.id}.png`}
+                                            alt={c.name}
+                                            onError={e => { e.target.onerror = null; e.target.style.opacity = '.2'; }}
+                                        />
+                                        {s?.games > 0 && (
+                                            <div className={`chp-card-wr ${s.wr >= 52 ? 'good' : s.wr <= 48 ? 'bad' : ''}`}>
+                                                {s.wr}%
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="chp-card-name">{c.name}</div>
+                                    {s?.games > 0 && <div className="chp-card-games">{s.games}P</div>}
+                                </div>
+                            );
+                        })}
                     </div>
-                ) : (
-                    <>
-                        {/* Header */}
+                </div>
+
+                {/* Detail panel */}
+                {selected && (
+                    <div className="chp-detail-panel">
                         <div className="chp-header">
                             <div className="chp-header-img">
                                 <img src={`${DDRAGON}/img/champion/${selected.id}.png`} alt={selected.name} />
@@ -458,25 +510,21 @@ export default function ChampionPage() {
                                     {(detail?.tags || selected.tags || []).map(t => (
                                         <span key={t} className="chp-tag">{t}</span>
                                     ))}
+                                    {dbStats[selected.id]?.games > 0 && (
+                                        <span className="chp-tag" style={{ color: '#7ad1f5' }}>
+                                            {dbStats[selected.id].games}P · {dbStats[selected.id].wr}% WR
+                                        </span>
+                                    )}
                                 </div>
                             </div>
-                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                                <a
-                                    href={`https://u.gg/lol/champions/${selected.id.toLowerCase()}/build`}
-                                    target="_blank" rel="noopener noreferrer"
-                                    style={{ fontSize: 12, color: 'var(--text-dim)', textDecoration: 'none' }}
-                                >
-                                    Voir sur u.gg ↗
-                                </a>
-                            </div>
+                            <button className="chp-close-btn" onClick={() => setSelected(null)}>✕</button>
                         </div>
 
-                        {/* Tabs */}
                         <div className="chp-tabs">
                             {[
-                                { id: 'build', label: '🔨 Build' },
+                                { id: 'build',     label: '🔨 Build' },
                                 { id: 'probuilds', label: '👑 ProBuilds' },
-                                { id: 'matchups', label: '⚔ Matchups' },
+                                { id: 'matchups',  label: '⚔ Matchups' },
                             ].map(t => (
                                 <button
                                     key={t.id}
@@ -488,13 +536,12 @@ export default function ChampionPage() {
                             ))}
                         </div>
 
-                        {/* Tab content */}
                         <div className="chp-panel">
                             {tab === 'build'     && <BuildTab    champKey={selected.id} champName={selected.name} detail={detail} />}
-                            {tab === 'probuilds' && <ProBuildTab champName={selected.name} />}
-                            {tab === 'matchups'  && <MatchupTab  champName={selected.name} />}
+                            {tab === 'probuilds' && <ProBuildTab champKey={selected.id} champName={selected.name} />}
+                            {tab === 'matchups'  && <MatchupTab  champKey={selected.id} champName={selected.name} />}
                         </div>
-                    </>
+                    </div>
                 )}
             </div>
         </div>
