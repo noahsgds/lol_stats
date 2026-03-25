@@ -58,9 +58,10 @@ export default function App() {
             } catch { } finally { clearTimeout(t); }
 
             setSoloSyncMsg('Chargement des données…');
-            const [d, rankFromServer] = await Promise.all([
+            const [d, rankFromServer, playerStats] = await Promise.all([
                 fetchAll(tag, q),
                 fetch(`${API_BASE}/rank?riotId=${encodeURIComponent(tag)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+                fetch(`${API_BASE}/player-stats?riotId=${encodeURIComponent(tag)}${q ? '&queue=' + q : ''}`).then(r => r.ok ? r.json() : null).catch(() => null),
             ]);
             // Priority: fresh sync > server DB (bypass RLS) > rankHint from landing cards > local supabase (RLS blocked)
             const rankSolo = syncResult.rank
@@ -68,7 +69,9 @@ export default function App() {
                 || rankHint
                 || d.rank
                 || {};
-            setSoloData({ ...d, rank: rankSolo, rawTag: tag });
+            const finalGlobal = (playerStats?.global?.total_games > 0) ? playerStats.global : d.global;
+            const finalHistory = (playerStats?.history?.length > 0) ? playerStats.history : d.history;
+            setSoloData({ ...d, rank: rankSolo, rawTag: tag, global: finalGlobal, history: finalHistory });
             showToast(syncResult.added > 0 ? `✅ ${syncResult.added} nouveau(x) match(s) ajouté(s)` : '✅ Données à jour');
         } catch (e) {
             console.error(e);
@@ -109,10 +112,16 @@ export default function App() {
             setSyncMsg('Chargement des données…');
             const fetchRank = (tag) =>
                 fetch(`${API_BASE}/rank?riotId=${encodeURIComponent(tag)}`).then(r => r.ok ? r.json() : null).catch(() => null);
-            const [d1, d2, r1, r2] = await Promise.all([fetchAll(p1, q), fetchAll(p2, q), fetchRank(p1), fetchRank(p2)]);
+            const fetchPlayerStats = (tag) =>
+                fetch(`${API_BASE}/player-stats?riotId=${encodeURIComponent(tag)}${q ? '&queue=' + q : ''}`).then(r => r.ok ? r.json() : null).catch(() => null);
+            const [d1, d2, r1, r2, ps1, ps2] = await Promise.all([fetchAll(p1, q), fetchAll(p2, q), fetchRank(p1), fetchRank(p2), fetchPlayerStats(p1), fetchPlayerStats(p2)]);
             const rank1 = s1.rank || (r1?.riot_id ? r1 : null) || d1.rank || {};
             const rank2 = s2.rank || (r2?.riot_id ? r2 : null) || d2.rank || {};
-            setPlayersData({ p1: { ...d1, rank: rank1, rawTag: p1 }, p2: { ...d2, rank: rank2, rawTag: p2 } });
+            const fg1 = (ps1?.global?.total_games > 0) ? ps1.global : d1.global;
+            const fh1 = (ps1?.history?.length > 0) ? ps1.history : d1.history;
+            const fg2 = (ps2?.global?.total_games > 0) ? ps2.global : d2.global;
+            const fh2 = (ps2?.history?.length > 0) ? ps2.history : d2.history;
+            setPlayersData({ p1: { ...d1, rank: rank1, rawTag: p1, global: fg1, history: fh1 }, p2: { ...d2, rank: rank2, rawTag: p2, global: fg2, history: fh2 } });
 
             const failed = s1.failed || s2.failed;
             const newCount = (s1.added || 0) + (s2.added || 0);

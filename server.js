@@ -425,7 +425,7 @@ app.get('/champion-stats', async (req, res) => {
         const { data: rows, error } = await supabase
             .from('bronze_matches')
             .select('match_data')
-            .filter('match_data::text', 'ilike', `%"championName":"${champ}"%`)
+            .filter('match_data::text', 'ilike', `%"${champ}"%`)
             .limit(100);
 
         if (error) return res.status(500).json({ error: error.message });
@@ -533,7 +533,7 @@ app.get('/champion-probuilds', async (req, res) => {
         const { data: rows, error } = await supabase
             .from('bronze_matches')
             .select('match_data')
-            .filter('match_data::text', 'ilike', `%"championName":"${champ}"%`)
+            .filter('match_data::text', 'ilike', `%"${champ}"%`)
             .order('match_id', { ascending: false })
             .limit(500);
 
@@ -751,7 +751,7 @@ app.get('/champion-matchups', async (req, res) => {
         const { data: rows, error } = await supabase
             .from('bronze_matches')
             .select('match_data')
-            .filter('match_data::text', 'ilike', `%"championName":"${champ}"%`)
+            .filter('match_data::text', 'ilike', `%"${champ}"%`)
             .limit(100);
 
         if (error || !rows?.length) return res.json({ matchups: [] });
@@ -787,6 +787,103 @@ app.get('/champion-matchups', async (req, res) => {
         res.json({ matchups });
     } catch (err) {
         console.error('Matchups error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── PLAYER STATS (stats + historique depuis bronze_matches, bypass RLS) ──
+app.get('/player-stats', async (req, res) => {
+    try {
+        const riotId = req.query.riotId;
+        const queueFilter = req.query.queue || null;
+        if (!riotId?.includes('#')) return res.status(400).json({ error: 'Format: Pseudo#TAG' });
+        const [gameName, tagLine] = riotId.split('#').map(s => s.trim());
+
+        // 1. Get puuid + rank_history (contains match IDs per sync)
+        const { data: playerRow } = await supabase
+            .from('player_ranks')
+            .select('puuid, rank_history')
+            .ilike('riot_id', `${gameName}#${tagLine}`)
+            .maybeSingle();
+        if (!playerRow?.puuid) return res.json({ global: {}, history: [] });
+
+        // 2. Extract all known match IDs (newest syncs first), up to 30
+        const allMatchIds = [...new Set(
+            (playerRow.rank_history || [])
+                .slice().reverse()
+                .flatMap(h => h.match_ids || [])
+        )].slice(0, 30);
+        if (!allMatchIds.length) return res.json({ global: {}, history: [] });
+
+        // 3. Fetch from bronze_matches (exact lookup, no JSONB text scan)
+        const { data: rows } = await supabase
+            .from('bronze_matches')
+            .select('match_id, match_data')
+            .in('match_id', allMatchIds);
+        if (!rows?.length) return res.json({ global: {}, history: [] });
+
+        // 4. Sort newest first (numeric match id part)
+        rows.sort((a, b) => {
+            const nA = parseInt(a.match_id.split('_')[1] || '0');
+            const nB = parseInt(b.match_id.split('_')[1] || '0');
+            return nB - nA;
+        });
+
+        // 5. Extract player participant from each match, apply queue filter
+        const entries = [];
+        for (const row of rows) {
+            const info = row.match_data?.info;
+            if (!info) continue;
+            if (queueFilter && String(info.queueId) !== String(queueFilter)) continue;
+            const p = (info.participants || []).find(x => x.puuid === playerRow.puuid);
+            if (!p) continue;
+            entries.push({ matchId: row.match_id, info, p });
+        }
+        if (!entries.length) return res.json({ global: {}, history: [] });
+
+        // 6. Aggregate global stats
+        const g = entries.length;
+        const wins  = entries.filter(e => e.p.win).length;
+        const totalK = entries.reduce((a, e) => a + (e.p.kills || 0), 0);
+        const totalD = entries.reduce((a, e) => a + (e.p.deaths || 0), 0);
+        const totalA = entries.reduce((a, e) => a + (e.p.assists || 0), 0);
+        const global = {
+            total_games:      g,
+            win_rate:         parseFloat((wins / g * 100).toFixed(1)),
+            kda:              parseFloat(((totalK + totalA) / Math.max(totalD, 1)).toFixed(2)),
+            avg_damage:       Math.round(entries.reduce((a, e) => a + (e.p.totalDamageDealtToChampions || 0), 0) / g),
+            avg_damage_taken: Math.round(entries.reduce((a, e) => a + (e.p.totalDamageTaken || 0), 0) / g),
+            avg_gold:         Math.round(entries.reduce((a, e) => a + (e.p.goldEarned || 0), 0) / g),
+            avg_cs:           parseFloat((entries.reduce((a, e) => a + (e.p.totalMinionsKilled || 0) + (e.p.neutralMinionsKilled || 0), 0) / g).toFixed(1)),
+            avg_vision:       parseFloat((entries.reduce((a, e) => a + (e.p.visionScore || 0), 0) / g).toFixed(1)),
+        };
+
+        // 7. Build match history list
+        const history = entries.map(({ matchId, info, p }) => ({
+            match_id:           matchId,
+            champion_name:      p.championName,
+            champ_level:        p.champLevel || 0,
+            queue_id:           info.queueId || 0,
+            game_mode:          info.gameMode || '',
+            win:                p.win,
+            kills:              p.kills || 0,
+            deaths:             p.deaths || 0,
+            assists:            p.assists || 0,
+            kda:                parseFloat(((p.kills + p.assists) / Math.max(p.deaths, 1)).toFixed(2)),
+            cs:                 (p.totalMinionsKilled || 0) + (p.neutralMinionsKilled || 0),
+            gold_earned:        p.goldEarned || 0,
+            total_damage:       p.totalDamageDealtToChampions || 0,
+            total_damage_taken: p.totalDamageTaken || 0,
+            vision_score:       p.visionScore || 0,
+            game_duration:      info.gameDuration || 0,
+            game_end_timestamp: info.gameEndTimestamp || null,
+            item0: p.item0 || 0, item1: p.item1 || 0, item2: p.item2 || 0,
+            item3: p.item3 || 0, item4: p.item4 || 0, item5: p.item5 || 0,
+        }));
+
+        res.json({ global, history });
+    } catch (err) {
+        console.error('Player stats error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
