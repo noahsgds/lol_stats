@@ -32,7 +32,7 @@ export default function MatchHistory({ history, loading, trackedTag, lpMap = {} 
                         key={i} m={m} i={i}
                         onOpen={() => m.match_id && setSelectedMatchId(m.match_id)}
                         hasDetail={!!m.match_id}
-                        lpChange={m.match_id && (m.queue_id === 420 || m.queue_id === 440) ? lpMap[m.match_id] : undefined}
+                        lpChange={m.match_id && (Number(m.queue_id) === 420 || Number(m.queue_id) === 440) ? lpMap[m.match_id] : undefined}
                     />
                 ))}
 

@@ -38,7 +38,10 @@ export function getQ(qid) {
     return m[qid] || `Q${qid || '?'}`;
 }
 
-// Calcule un map match_id → LP estimé depuis l'historique de rang (rank_history)
+// Calcule un map match_id → LP exact depuis l'historique de rang (rank_history)
+// On n'assigne le LP que si le batch contient exactement 1 match (sinon on ne peut pas
+// savoir quel match a gagné/perdu combien de LP). Les deltas > 60 sont ignorés
+// (promotion/demotion inter-division faussent le calcul).
 export function computeLpMap(rankHistory) {
     const map = {};
     if (!rankHistory?.length) return map;
@@ -46,13 +49,11 @@ export function computeLpMap(rankHistory) {
         const prev = rankHistory[i - 1];
         const curr = rankHistory[i];
         const ids = curr.match_ids || [];
-        if (!ids.length) continue;
-        // LP delta Solo/Duo (seulement si même division pour éviter les artefacts de promotion)
-        if (curr.solo_lp !== null && prev.solo_lp !== null) {
-            const lpDelta = (curr.solo_lp ?? 0) - (prev.solo_lp ?? 0);
-            const perGame = Math.round(lpDelta / ids.length);
-            ids.forEach(id => { if (!(id in map)) map[id] = perGame; });
-        }
+        if (ids.length !== 1) continue; // LP exact uniquement quand 1 match par sync
+        if (curr.solo_lp == null || prev.solo_lp == null) continue;
+        const lpDelta = curr.solo_lp - prev.solo_lp;
+        if (Math.abs(lpDelta) > 60) continue; // artefact promotion/demotion
+        if (!(ids[0] in map)) map[ids[0]] = lpDelta;
     }
     return map;
 }
